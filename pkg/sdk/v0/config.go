@@ -110,11 +110,12 @@ type ApiObject struct {
 	// defined instance abstractions.
 	DefinedInstance *bool `yaml:"DefinedInstance"`
 
-	// Indicate whether the object will need a controller
+	// Indicates whether the object will need a controller
 	// that is registered with the rest-api for reconciliation.
 	Reconcilable *bool `yaml:"Reconcilable"`
 
-	// Indicate the message will be persisted by NATS
+	// Indicates whether the message will be persisted by NATS.  Set to true for
+	// sensitive information, e.g. passwords or tokens.
 	DisableNotificationPersistence *bool `yaml:"DisableNotificationPersistence"`
 
 	// Indicates whether the route should be exposed on the rest-api for the object
@@ -138,6 +139,10 @@ type ApiObject struct {
 
 	// Tptctl contains sdk configurations related to tptctl
 	Tptctl *Tptctl `yaml:"Tptctl"`
+
+	// InternalOnly indicates whether the object is only used internally by the
+	// controllers and should not be exposed to the user.
+	InternalOnly *bool `yaml:"InternalOnly"`
 }
 
 // Tptctl contains attributes used by the SDK to generate tptctl
