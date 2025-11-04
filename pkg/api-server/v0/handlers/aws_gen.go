@@ -91,7 +91,11 @@ func (h Handler) AddAwsAccount(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsAccount, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsAccount,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -112,33 +116,115 @@ func (h Handler) AddAwsAccount(c echo.Context) error {
 // @Router /v0/aws-accounts [GET]
 func (h Handler) GetAwsAccounts(c echo.Context) error {
 	objectType := api_v0.ObjectTypeAwsAccount
-	params, err := c.(*apiserver_lib.CustomContext).GetPaginationParams()
+
+	// get pagination parameters
+	pageParams, err := c.(*apiserver_lib.CustomContext).GetPaginationParams()
 	if err != nil {
-		return apiserver_lib.ResponseStatus400(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus400(c, pageParams, err, objectType)
 	}
 
+	// bind filter
 	var filter api_v0.AwsAccount
 	if err := c.Bind(&filter); err != nil {
 		h.Logger.Error("handler error: error binding filter", zap.Error(err))
-		return apiserver_lib.ResponseStatus500(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
 	}
 
-	var totalCount int64
-	if result := h.DB.Model(&api_v0.AwsAccount{}).Where(&filter).Count(&totalCount); result.Error != nil {
-		h.Logger.Error("handler error: error counting objects", zap.Error(result.Error))
-		return apiserver_lib.ResponseStatus500(c, &params, result.Error, objectType)
-	}
+	pagination := new(apiserver_lib.Pagination)
+	pagination.Limit = pageParams.Limit
 
 	records := &[]api_v0.AwsAccount{}
-	if result := h.DB.Order("ID asc").Where(&filter).Limit(params.Size).Offset((params.Page - 1) * params.Size).Find(records); result.Error != nil {
-		h.Logger.Error("handler error: error finding objects", zap.Error(result.Error))
-		return apiserver_lib.ResponseStatus500(c, &params, result.Error, objectType)
+	var returnedCount int64
+
+	switch {
+	case pageParams.QueryId == "":
+		// no query ID provided, so the client is not requesting a specific page of results
+		// count total number of objects
+		var totalCount int64
+		if result := h.DB.Model(&api_v0.AwsAccount{}).Where(&filter).Count(&totalCount); result.Error != nil {
+			h.Logger.Error("handler error: error counting objects", zap.Error(result.Error))
+			return apiserver_lib.ResponseStatus500(c, pageParams, result.Error, objectType)
+		}
+
+		// see if total count is greater than the limit
+		pagination.HasMore = totalCount > pagination.Limit
+
+		switch pagination.HasMore {
+		case false:
+			// if we don't have to paginate, return all records
+			if result := h.DB.Order("ID asc").Where(&filter).Find(records); result.Error != nil {
+				h.Logger.Error("handler error: error finding objects", zap.Error(result.Error))
+				return apiserver_lib.ResponseStatus500(c, pageParams, result.Error, objectType)
+			}
+			returnedCount = int64(len(*records))
+		case true:
+			// if we have to paginate, create the materialized view and use it to fetch the first page of records
+			queryTable := filter.TableName()
+			viewName, qid, err := h.CreateMaterializedView(queryTable)
+			if err != nil {
+				h.Logger.Error("handler error: error creating materialized view", zap.Error(err))
+				return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+			}
+			pagination.QueryId = qid
+
+			// fetch records from the new materialized view
+			returnedCount, err = h.GetMaterializedViewRecords(records, viewName, pageParams)
+			if err != nil {
+				h.Logger.Error("handler error: error finding records", zap.Error(err))
+				return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+			}
+
+			// set the cursor for the next page of results
+			if len(*records) > 0 {
+				pagination.NextCursor = *(*records)[len(*records)-1].ID
+			} else {
+				pagination.NextCursor = 0
+			}
+		}
+	case pageParams.QueryId != "" && pageParams.Cursor == 0:
+		// client provided a query ID but no cursor, so we cannot fetch the next page of results
+		return apiserver_lib.ResponseStatus400(c, pageParams, errors.New("cursor is required when query ID is provided"), objectType)
+	case pageParams.QueryId != "" && pageParams.Cursor != 0:
+		// use query ID to find the materialized view name
+		viewName, err := h.GetMaterializedViewName(pageParams.QueryId)
+		if err != nil {
+			h.Logger.Error("handler error: error finding materialized view", zap.Error(err))
+			return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+		}
+
+		// fetch records from the materialized view based on cursor
+		returnedCount, err = h.GetMaterializedViewRecords(records, viewName, pageParams)
+		if err != nil {
+			h.Logger.Error("handler error: error finding records", zap.Error(err))
+			return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+		}
+
+		// set the query ID for the next page of results
+		pagination.QueryId = pageParams.QueryId
+
+		// set the cursor for the next page of results
+		if len(*records) > 0 {
+			pagination.NextCursor = *(*records)[len(*records)-1].ID
+		} else {
+			pagination.NextCursor = 0
+		}
+
+		// see if we fetched the last of the records
+		pagination.HasMore = returnedCount >= pagination.Limit
 	}
 
-	response, err := apiserver_lib.CreateResponse(apiserver_lib.CreateMeta(params, totalCount), *records, objectType)
+	// construct response
+	response, err := apiserver_lib.CreateResponse(
+		&apiserver_lib.Meta{
+			ObjectCount: returnedCount,
+			Pagination:  *pagination,
+		},
+		*records,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
-		return apiserver_lib.ResponseStatus500(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
 	}
 
 	return apiserver_lib.ResponseStatus200(c, *response)
@@ -166,7 +252,11 @@ func (h Handler) GetAwsAccount(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsAccount, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsAccount,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -222,7 +312,11 @@ func (h Handler) UpdateAwsAccount(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, existingAwsAccount, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		existingAwsAccount,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -295,7 +389,11 @@ func (h Handler) ReplaceAwsAccount(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, existingAwsAccount, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		existingAwsAccount,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -333,7 +431,11 @@ func (h Handler) DeleteAwsAccount(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsAccount, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsAccount,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -416,7 +518,11 @@ func (h Handler) AddAwsEksKubernetesRuntimeDefinition(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsEksKubernetesRuntimeDefinition, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsEksKubernetesRuntimeDefinition,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -437,33 +543,115 @@ func (h Handler) AddAwsEksKubernetesRuntimeDefinition(c echo.Context) error {
 // @Router /v0/aws-eks-kubernetes-runtime-definitions [GET]
 func (h Handler) GetAwsEksKubernetesRuntimeDefinitions(c echo.Context) error {
 	objectType := api_v0.ObjectTypeAwsEksKubernetesRuntimeDefinition
-	params, err := c.(*apiserver_lib.CustomContext).GetPaginationParams()
+
+	// get pagination parameters
+	pageParams, err := c.(*apiserver_lib.CustomContext).GetPaginationParams()
 	if err != nil {
-		return apiserver_lib.ResponseStatus400(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus400(c, pageParams, err, objectType)
 	}
 
+	// bind filter
 	var filter api_v0.AwsEksKubernetesRuntimeDefinition
 	if err := c.Bind(&filter); err != nil {
 		h.Logger.Error("handler error: error binding filter", zap.Error(err))
-		return apiserver_lib.ResponseStatus500(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
 	}
 
-	var totalCount int64
-	if result := h.DB.Model(&api_v0.AwsEksKubernetesRuntimeDefinition{}).Where(&filter).Count(&totalCount); result.Error != nil {
-		h.Logger.Error("handler error: error counting objects", zap.Error(result.Error))
-		return apiserver_lib.ResponseStatus500(c, &params, result.Error, objectType)
-	}
+	pagination := new(apiserver_lib.Pagination)
+	pagination.Limit = pageParams.Limit
 
 	records := &[]api_v0.AwsEksKubernetesRuntimeDefinition{}
-	if result := h.DB.Order("ID asc").Where(&filter).Limit(params.Size).Offset((params.Page - 1) * params.Size).Find(records); result.Error != nil {
-		h.Logger.Error("handler error: error finding objects", zap.Error(result.Error))
-		return apiserver_lib.ResponseStatus500(c, &params, result.Error, objectType)
+	var returnedCount int64
+
+	switch {
+	case pageParams.QueryId == "":
+		// no query ID provided, so the client is not requesting a specific page of results
+		// count total number of objects
+		var totalCount int64
+		if result := h.DB.Model(&api_v0.AwsEksKubernetesRuntimeDefinition{}).Where(&filter).Count(&totalCount); result.Error != nil {
+			h.Logger.Error("handler error: error counting objects", zap.Error(result.Error))
+			return apiserver_lib.ResponseStatus500(c, pageParams, result.Error, objectType)
+		}
+
+		// see if total count is greater than the limit
+		pagination.HasMore = totalCount > pagination.Limit
+
+		switch pagination.HasMore {
+		case false:
+			// if we don't have to paginate, return all records
+			if result := h.DB.Order("ID asc").Where(&filter).Find(records); result.Error != nil {
+				h.Logger.Error("handler error: error finding objects", zap.Error(result.Error))
+				return apiserver_lib.ResponseStatus500(c, pageParams, result.Error, objectType)
+			}
+			returnedCount = int64(len(*records))
+		case true:
+			// if we have to paginate, create the materialized view and use it to fetch the first page of records
+			queryTable := filter.TableName()
+			viewName, qid, err := h.CreateMaterializedView(queryTable)
+			if err != nil {
+				h.Logger.Error("handler error: error creating materialized view", zap.Error(err))
+				return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+			}
+			pagination.QueryId = qid
+
+			// fetch records from the new materialized view
+			returnedCount, err = h.GetMaterializedViewRecords(records, viewName, pageParams)
+			if err != nil {
+				h.Logger.Error("handler error: error finding records", zap.Error(err))
+				return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+			}
+
+			// set the cursor for the next page of results
+			if len(*records) > 0 {
+				pagination.NextCursor = *(*records)[len(*records)-1].ID
+			} else {
+				pagination.NextCursor = 0
+			}
+		}
+	case pageParams.QueryId != "" && pageParams.Cursor == 0:
+		// client provided a query ID but no cursor, so we cannot fetch the next page of results
+		return apiserver_lib.ResponseStatus400(c, pageParams, errors.New("cursor is required when query ID is provided"), objectType)
+	case pageParams.QueryId != "" && pageParams.Cursor != 0:
+		// use query ID to find the materialized view name
+		viewName, err := h.GetMaterializedViewName(pageParams.QueryId)
+		if err != nil {
+			h.Logger.Error("handler error: error finding materialized view", zap.Error(err))
+			return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+		}
+
+		// fetch records from the materialized view based on cursor
+		returnedCount, err = h.GetMaterializedViewRecords(records, viewName, pageParams)
+		if err != nil {
+			h.Logger.Error("handler error: error finding records", zap.Error(err))
+			return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+		}
+
+		// set the query ID for the next page of results
+		pagination.QueryId = pageParams.QueryId
+
+		// set the cursor for the next page of results
+		if len(*records) > 0 {
+			pagination.NextCursor = *(*records)[len(*records)-1].ID
+		} else {
+			pagination.NextCursor = 0
+		}
+
+		// see if we fetched the last of the records
+		pagination.HasMore = returnedCount >= pagination.Limit
 	}
 
-	response, err := apiserver_lib.CreateResponse(apiserver_lib.CreateMeta(params, totalCount), *records, objectType)
+	// construct response
+	response, err := apiserver_lib.CreateResponse(
+		&apiserver_lib.Meta{
+			ObjectCount: returnedCount,
+			Pagination:  *pagination,
+		},
+		*records,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
-		return apiserver_lib.ResponseStatus500(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
 	}
 
 	return apiserver_lib.ResponseStatus200(c, *response)
@@ -491,7 +679,11 @@ func (h Handler) GetAwsEksKubernetesRuntimeDefinition(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsEksKubernetesRuntimeDefinition, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsEksKubernetesRuntimeDefinition,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -547,7 +739,11 @@ func (h Handler) UpdateAwsEksKubernetesRuntimeDefinition(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, existingAwsEksKubernetesRuntimeDefinition, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		existingAwsEksKubernetesRuntimeDefinition,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -620,7 +816,11 @@ func (h Handler) ReplaceAwsEksKubernetesRuntimeDefinition(c echo.Context) error 
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, existingAwsEksKubernetesRuntimeDefinition, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		existingAwsEksKubernetesRuntimeDefinition,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -664,7 +864,11 @@ func (h Handler) DeleteAwsEksKubernetesRuntimeDefinition(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsEksKubernetesRuntimeDefinition, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsEksKubernetesRuntimeDefinition,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -761,7 +965,11 @@ func (h Handler) AddAwsEksKubernetesRuntimeInstance(c echo.Context) error {
 		h.JS.Publish(notif.AwsEksKubernetesRuntimeInstanceCreateSubject, *notifPayload)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsEksKubernetesRuntimeInstance, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsEksKubernetesRuntimeInstance,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -782,33 +990,115 @@ func (h Handler) AddAwsEksKubernetesRuntimeInstance(c echo.Context) error {
 // @Router /v0/aws-eks-kubernetes-runtime-instances [GET]
 func (h Handler) GetAwsEksKubernetesRuntimeInstances(c echo.Context) error {
 	objectType := api_v0.ObjectTypeAwsEksKubernetesRuntimeInstance
-	params, err := c.(*apiserver_lib.CustomContext).GetPaginationParams()
+
+	// get pagination parameters
+	pageParams, err := c.(*apiserver_lib.CustomContext).GetPaginationParams()
 	if err != nil {
-		return apiserver_lib.ResponseStatus400(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus400(c, pageParams, err, objectType)
 	}
 
+	// bind filter
 	var filter api_v0.AwsEksKubernetesRuntimeInstance
 	if err := c.Bind(&filter); err != nil {
 		h.Logger.Error("handler error: error binding filter", zap.Error(err))
-		return apiserver_lib.ResponseStatus500(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
 	}
 
-	var totalCount int64
-	if result := h.DB.Model(&api_v0.AwsEksKubernetesRuntimeInstance{}).Where(&filter).Count(&totalCount); result.Error != nil {
-		h.Logger.Error("handler error: error counting objects", zap.Error(result.Error))
-		return apiserver_lib.ResponseStatus500(c, &params, result.Error, objectType)
-	}
+	pagination := new(apiserver_lib.Pagination)
+	pagination.Limit = pageParams.Limit
 
 	records := &[]api_v0.AwsEksKubernetesRuntimeInstance{}
-	if result := h.DB.Order("ID asc").Where(&filter).Limit(params.Size).Offset((params.Page - 1) * params.Size).Find(records); result.Error != nil {
-		h.Logger.Error("handler error: error finding objects", zap.Error(result.Error))
-		return apiserver_lib.ResponseStatus500(c, &params, result.Error, objectType)
+	var returnedCount int64
+
+	switch {
+	case pageParams.QueryId == "":
+		// no query ID provided, so the client is not requesting a specific page of results
+		// count total number of objects
+		var totalCount int64
+		if result := h.DB.Model(&api_v0.AwsEksKubernetesRuntimeInstance{}).Where(&filter).Count(&totalCount); result.Error != nil {
+			h.Logger.Error("handler error: error counting objects", zap.Error(result.Error))
+			return apiserver_lib.ResponseStatus500(c, pageParams, result.Error, objectType)
+		}
+
+		// see if total count is greater than the limit
+		pagination.HasMore = totalCount > pagination.Limit
+
+		switch pagination.HasMore {
+		case false:
+			// if we don't have to paginate, return all records
+			if result := h.DB.Order("ID asc").Where(&filter).Find(records); result.Error != nil {
+				h.Logger.Error("handler error: error finding objects", zap.Error(result.Error))
+				return apiserver_lib.ResponseStatus500(c, pageParams, result.Error, objectType)
+			}
+			returnedCount = int64(len(*records))
+		case true:
+			// if we have to paginate, create the materialized view and use it to fetch the first page of records
+			queryTable := filter.TableName()
+			viewName, qid, err := h.CreateMaterializedView(queryTable)
+			if err != nil {
+				h.Logger.Error("handler error: error creating materialized view", zap.Error(err))
+				return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+			}
+			pagination.QueryId = qid
+
+			// fetch records from the new materialized view
+			returnedCount, err = h.GetMaterializedViewRecords(records, viewName, pageParams)
+			if err != nil {
+				h.Logger.Error("handler error: error finding records", zap.Error(err))
+				return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+			}
+
+			// set the cursor for the next page of results
+			if len(*records) > 0 {
+				pagination.NextCursor = *(*records)[len(*records)-1].ID
+			} else {
+				pagination.NextCursor = 0
+			}
+		}
+	case pageParams.QueryId != "" && pageParams.Cursor == 0:
+		// client provided a query ID but no cursor, so we cannot fetch the next page of results
+		return apiserver_lib.ResponseStatus400(c, pageParams, errors.New("cursor is required when query ID is provided"), objectType)
+	case pageParams.QueryId != "" && pageParams.Cursor != 0:
+		// use query ID to find the materialized view name
+		viewName, err := h.GetMaterializedViewName(pageParams.QueryId)
+		if err != nil {
+			h.Logger.Error("handler error: error finding materialized view", zap.Error(err))
+			return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+		}
+
+		// fetch records from the materialized view based on cursor
+		returnedCount, err = h.GetMaterializedViewRecords(records, viewName, pageParams)
+		if err != nil {
+			h.Logger.Error("handler error: error finding records", zap.Error(err))
+			return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
+		}
+
+		// set the query ID for the next page of results
+		pagination.QueryId = pageParams.QueryId
+
+		// set the cursor for the next page of results
+		if len(*records) > 0 {
+			pagination.NextCursor = *(*records)[len(*records)-1].ID
+		} else {
+			pagination.NextCursor = 0
+		}
+
+		// see if we fetched the last of the records
+		pagination.HasMore = returnedCount >= pagination.Limit
 	}
 
-	response, err := apiserver_lib.CreateResponse(apiserver_lib.CreateMeta(params, totalCount), *records, objectType)
+	// construct response
+	response, err := apiserver_lib.CreateResponse(
+		&apiserver_lib.Meta{
+			ObjectCount: returnedCount,
+			Pagination:  *pagination,
+		},
+		*records,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
-		return apiserver_lib.ResponseStatus500(c, &params, err, objectType)
+		return apiserver_lib.ResponseStatus500(c, pageParams, err, objectType)
 	}
 
 	return apiserver_lib.ResponseStatus200(c, *response)
@@ -836,7 +1126,11 @@ func (h Handler) GetAwsEksKubernetesRuntimeInstance(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsEksKubernetesRuntimeInstance, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsEksKubernetesRuntimeInstance,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -906,7 +1200,11 @@ func (h Handler) UpdateAwsEksKubernetesRuntimeInstance(c echo.Context) error {
 		h.JS.Publish(notif.AwsEksKubernetesRuntimeInstanceUpdateSubject, *notifPayload)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, existingAwsEksKubernetesRuntimeInstance, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		existingAwsEksKubernetesRuntimeInstance,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -979,7 +1277,11 @@ func (h Handler) ReplaceAwsEksKubernetesRuntimeInstance(c echo.Context) error {
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, existingAwsEksKubernetesRuntimeInstance, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		existingAwsEksKubernetesRuntimeInstance,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
@@ -1056,7 +1358,11 @@ func (h Handler) DeleteAwsEksKubernetesRuntimeInstance(c echo.Context) error {
 		}
 	}
 
-	response, err := apiserver_lib.CreateResponse(nil, awsEksKubernetesRuntimeInstance, objectType)
+	response, err := apiserver_lib.CreateResponse(
+		apiserver_lib.SingleObjectMeta(),
+		awsEksKubernetesRuntimeInstance,
+		objectType,
+	)
 	if err != nil {
 		h.Logger.Error("handler error: error creating response", zap.Error(err))
 		return apiserver_lib.ResponseStatus500(c, nil, err, objectType)
