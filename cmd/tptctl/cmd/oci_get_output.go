@@ -16,17 +16,20 @@ func outputGetv0OciAccountsCmd(
 	ociAccounts *[]config_v0.OciAccountConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t USER OCID\t TENANCY OCID\t DEFAULT ACCOUNT\t DEFAULT REGION\t AGE")
+	fmt.Fprintln(writer, "NAME\t USER OCID\t TENANCY OCID\t DEFAULT ACCOUNT\t DEFAULT REGION\t AGE")
 	for _, ociAccount := range *ociAccounts {
+		age := ""
+		if ociAccount.OciAccount.Age != nil {
+			age = *ociAccount.OciAccount.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*ociAccount.OciAccount.Name, "\t",
 			*ociAccount.OciAccount.UserOCID, "\t",
 			*ociAccount.OciAccount.TenancyOCID, "\t",
 			*ociAccount.OciAccount.DefaultAccount, "\t",
 			*ociAccount.OciAccount.DefaultRegion, "\t",
-			*ociAccount.OciAccount.Age,
+			age,
 		)
 	}
 	writer.Flush()
@@ -40,17 +43,24 @@ func outputGetv0OciOkeKubernetesRuntimesCmd(
 	ociOkeKubernetesRuntimes *[]config_v0.OciOkeKubernetesRuntimeConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t ACCOUNT NAME\t WORKER NODE SHAPE\t WORKER NODE INITIAL COUNT\t REGION\t AGE")
+	fmt.Fprintln(writer, "NAME\t ACCOUNT NAME\t WORKER NODE SHAPE\t WORKER NODE INITIAL COUNT\t REGION\t AGE")
 	for _, ociOkeKubernetesRuntime := range *ociOkeKubernetesRuntimes {
+		region := ""
+		if ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Region != nil {
+			region = *ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Region
+		}
+		age := ""
+		if ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Age != nil {
+			age = *ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Name, "\t",
 			*ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.OciAccountName, "\t",
 			*ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.WorkerNodeShape, "\t",
 			*ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.WorkerNodeInitialCount, "\t",
-			*ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Region, "\t",
-			*ociOkeKubernetesRuntime.OciOkeKubernetesRuntime.Age,
+			region, "\t",
+			age,
 		)
 	}
 	writer.Flush()
@@ -64,16 +74,19 @@ func outputGetv0OciOkeKubernetesRuntimeDefinitionsCmd(
 	ociOkeKubernetesRuntimeDefinitions *[]config_v0.OciOkeKubernetesRuntimeDefinitionConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t OCI ACCOUNT NAME\t WORKER NODE SHAPE\t WORKER NODE INITIAL COUNT\t AGE")
+	fmt.Fprintln(writer, "NAME\t OCI ACCOUNT NAME\t WORKER NODE SHAPE\t WORKER NODE INITIAL COUNT\t AGE")
 	for _, ociOkeKubernetesRuntimeDefinition := range *ociOkeKubernetesRuntimeDefinitions {
+		age := ""
+		if ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.Age != nil {
+			age = *ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.Name, "\t",
 			*ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.OciAccountName, "\t",
 			*ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.WorkerNodeShape, "\t",
 			*ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.WorkerNodeInitialCount, "\t",
-			*ociOkeKubernetesRuntimeDefinition.OciOkeKubernetesRuntimeDefinition.Age,
+			age,
 		)
 	}
 	writer.Flush()
@@ -87,15 +100,27 @@ func outputGetv0OciOkeKubernetesRuntimeInstancesCmd(
 	ociOkeKubernetesRuntimeInstances *[]config_v0.OciOkeKubernetesRuntimeInstanceConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t OCI OKE KUBERNETES RUNTIME DEFINITION\t REGION\t AGE")
+	fmt.Fprintln(writer, "NAME\t OCI OKE KUBERNETES RUNTIME DEFINITION\t REGION\t AGE")
 	for _, ociOkeKubernetesRuntimeInstance := range *ociOkeKubernetesRuntimeInstances {
+		ociOkeDefinitionName := ""
+		if ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeDefinition != nil &&
+			ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeDefinition.Name != nil {
+			ociOkeDefinitionName = *ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeDefinition.Name
+		}
+		region := ""
+		if ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Region != nil {
+			region = *ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Region
+		}
+		age := ""
+		if ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Age != nil {
+			age = *ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Name, "\t",
-			*ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeDefinition.Name, "\t",
-			*ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Region, "\t",
-			*ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeInstance.Age,
+			ociOkeDefinitionName, "\t",
+			region, "\t",
+			age,
 		)
 	}
 	writer.Flush()

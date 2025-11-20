@@ -16,19 +16,31 @@ func outputGetv0HelmWorkloadsCmd(
 	helmWorkloads *[]config_v0.HelmWorkloadConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t HELM WORKLOAD DEFINITION\t HELM WORKLOAD INSTANCE\t REPO\t CHART\t KUBERNETES RUNTIME INSTANCE\t STATUS\t AGE")
+	fmt.Fprintln(writer, "NAME\t HELM WORKLOAD DEFINITION\t HELM WORKLOAD INSTANCE\t REPO\t CHART\t KUBERNETES RUNTIME INSTANCE\t STATUS\t AGE")
 	for _, helmWorkload := range *helmWorkloads {
+		kubernetesRuntimeInstanceName := ""
+		if helmWorkload.HelmWorkload.KubernetesRuntimeInstance != nil &&
+			helmWorkload.HelmWorkload.KubernetesRuntimeInstance.Name != nil {
+			kubernetesRuntimeInstanceName = *helmWorkload.HelmWorkload.KubernetesRuntimeInstance.Name
+		}
+		status := ""
+		if helmWorkload.HelmWorkload.Status != nil {
+			status = *helmWorkload.HelmWorkload.Status
+		}
+		age := ""
+		if helmWorkload.HelmWorkload.Age != nil {
+			age = *helmWorkload.HelmWorkload.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*helmWorkload.HelmWorkload.Name, "\t",
 			*helmWorkload.HelmWorkload.Name, "\t",
 			*helmWorkload.HelmWorkload.Name, "\t",
 			*helmWorkload.HelmWorkload.Repo, "\t",
 			*helmWorkload.HelmWorkload.Chart, "\t",
-			*helmWorkload.HelmWorkload.KubernetesRuntimeInstance.Name, "\t",
-			*helmWorkload.HelmWorkload.Status, "\t",
-			*helmWorkload.HelmWorkload.Age,
+			kubernetesRuntimeInstanceName, "\t",
+			status, "\t",
+			age,
 		)
 	}
 	writer.Flush()
@@ -42,15 +54,18 @@ func outputGetv0HelmWorkloadDefinitionsCmd(
 	helmWorkloadDefinitions *[]config_v0.HelmWorkloadDefinitionConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t REPO\t CHART\t AGE")
+	fmt.Fprintln(writer, "NAME\t REPO\t CHART\t AGE")
 	for _, helmWorkloadDefinition := range *helmWorkloadDefinitions {
+		age := ""
+		if helmWorkloadDefinition.HelmWorkloadDefinition.Age != nil {
+			age = *helmWorkloadDefinition.HelmWorkloadDefinition.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*helmWorkloadDefinition.HelmWorkloadDefinition.Name, "\t",
 			*helmWorkloadDefinition.HelmWorkloadDefinition.Repo, "\t",
 			*helmWorkloadDefinition.HelmWorkloadDefinition.Chart, "\t",
-			*helmWorkloadDefinition.HelmWorkloadDefinition.Age,
+			age,
 		)
 	}
 	writer.Flush()
@@ -64,16 +79,33 @@ func outputGetv0HelmWorkloadInstancesCmd(
 	helmWorkloadInstances *[]config_v0.HelmWorkloadInstanceConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t HELM WORKLOAD DEFINITION\t KUBERNETES RUNTIME INSTANCE\t STATUS\t AGE")
+	fmt.Fprintln(writer, "NAME\t HELM WORKLOAD DEFINITION\t KUBERNETES RUNTIME INSTANCE\t STATUS\t AGE")
 	for _, helmWorkloadInstance := range *helmWorkloadInstances {
+		helmWorkloadDefinitionName := ""
+		if helmWorkloadInstance.HelmWorkloadInstance.HelmWorkloadDefinition != nil &&
+			helmWorkloadInstance.HelmWorkloadInstance.HelmWorkloadDefinition.Name != nil {
+			helmWorkloadDefinitionName = *helmWorkloadInstance.HelmWorkloadInstance.HelmWorkloadDefinition.Name
+		}
+		kubernetesRuntimeInstanceName := ""
+		if helmWorkloadInstance.HelmWorkloadInstance.KubernetesRuntimeInstance != nil &&
+			helmWorkloadInstance.HelmWorkloadInstance.KubernetesRuntimeInstance.Name != nil {
+			kubernetesRuntimeInstanceName = *helmWorkloadInstance.HelmWorkloadInstance.KubernetesRuntimeInstance.Name
+		}
+		status := ""
+		if helmWorkloadInstance.HelmWorkloadInstance.Status != nil {
+			status = *helmWorkloadInstance.HelmWorkloadInstance.Status
+		}
+		age := ""
+		if helmWorkloadInstance.HelmWorkloadInstance.Age != nil {
+			age = *helmWorkloadInstance.HelmWorkloadInstance.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*helmWorkloadInstance.HelmWorkloadInstance.Name, "\t",
-			*helmWorkloadInstance.HelmWorkloadInstance.HelmWorkloadDefinition.Name, "\t",
-			*helmWorkloadInstance.HelmWorkloadInstance.KubernetesRuntimeInstance.Name, "\t",
-			*helmWorkloadInstance.HelmWorkloadInstance.Status, "\t",
-			*helmWorkloadInstance.HelmWorkloadInstance.Age,
+			helmWorkloadDefinitionName, "\t",
+			kubernetesRuntimeInstanceName, "\t",
+			status, "\t",
+			age,
 		)
 	}
 	writer.Flush()

@@ -16,16 +16,19 @@ func outputGetv0AwsAccountsCmd(
 	awsAccounts *[]config_v0.AwsAccountConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t DEFAULT ACCOUNT\t DEFAULT REGION\t ACCOUNT ID\t AGE")
+	fmt.Fprintln(writer, "NAME\t DEFAULT ACCOUNT\t DEFAULT REGION\t ACCOUNT ID\t AGE")
 	for _, awsAccount := range *awsAccounts {
+		age := ""
+		if awsAccount.AwsAccount.Age != nil {
+			age = *awsAccount.AwsAccount.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*awsAccount.AwsAccount.Name, "\t",
 			*awsAccount.AwsAccount.DefaultAccount, "\t",
 			*awsAccount.AwsAccount.DefaultRegion, "\t",
 			*awsAccount.AwsAccount.AccountID, "\t",
-			*awsAccount.AwsAccount.Age,
+			age,
 		)
 	}
 	writer.Flush()
@@ -39,17 +42,28 @@ func outputGetv0AwsEksKubernetesRuntimesCmd(
 	awsEksKubernetesRuntimes *[]config_v0.AwsEksKubernetesRuntimeConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t AWS EKS KUBERNETES DEFINITION NAME\t AWS EKS KUBERNETES INSTANCE NAME\t REGION\t RECONCILED\t AGE")
+	fmt.Fprintln(writer, "NAME\t AWS EKS KUBERNETES DEFINITION NAME\t AWS EKS KUBERNETES INSTANCE NAME\t REGION\t RECONCILED\t AGE")
 	for _, awsEksKubernetesRuntime := range *awsEksKubernetesRuntimes {
+		region := ""
+		if awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Region != nil {
+			region = *awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Region
+		}
+		reconciled := false
+		if awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Reconciled != nil {
+			reconciled = *awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Reconciled
+		}
+		age := ""
+		if awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Age != nil {
+			age = *awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Name, "\t",
 			*awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Name, "\t",
 			*awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Name, "\t",
-			*awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Region, "\t",
-			*awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Reconciled, "\t",
-			*awsEksKubernetesRuntime.AwsEksKubernetesRuntime.Age,
+			region, "\t",
+			reconciled, "\t",
+			age,
 		)
 	}
 	writer.Flush()
@@ -63,18 +77,21 @@ func outputGetv0AwsEksKubernetesRuntimeDefinitionsCmd(
 	awsEksKubernetesRuntimeDefinitions *[]config_v0.AwsEksKubernetesRuntimeDefinitionConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t AWS ACCOUNT\t ZONE COUNT\t DEFAULT NODE GROUP INSTANCE TYPE\t DEFAULT NODE GROUP MINIMUM SIZE\t DEFAULT NODE GROUP MAXIMUM SIZE\t AGE")
+	fmt.Fprintln(writer, "NAME\t AWS ACCOUNT\t ZONE COUNT\t DEFAULT NODE GROUP INSTANCE TYPE\t DEFAULT NODE GROUP MINIMUM SIZE\t DEFAULT NODE GROUP MAXIMUM SIZE\t AGE")
 	for _, awsEksKubernetesRuntimeDefinition := range *awsEksKubernetesRuntimeDefinitions {
+		age := ""
+		if awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.Age != nil {
+			age = *awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.Name, "\t",
 			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.AwsAccountName, "\t",
 			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.ZoneCount, "\t",
 			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.DefaultNodeGroupInstanceType, "\t",
 			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.DefaultNodeGroupMinimumSize, "\t",
 			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.DefaultNodeGroupMaximumSize, "\t",
-			*awsEksKubernetesRuntimeDefinition.AwsEksKubernetesRuntimeDefinition.Age,
+			age,
 		)
 	}
 	writer.Flush()
@@ -88,17 +105,38 @@ func outputGetv0AwsEksKubernetesRuntimeInstancesCmd(
 	awsEksKubernetesRuntimeInstances *[]config_v0.AwsEksKubernetesRuntimeInstanceConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t REGION\t KUBERNETES RUNTIME INSTANCE NAME\t AWS EKS KUBERNETES DEFINITION NAME\t RECONCILED\t AGE")
+	fmt.Fprintln(writer, "NAME\t REGION\t KUBERNETES RUNTIME INSTANCE NAME\t AWS EKS KUBERNETES DEFINITION NAME\t RECONCILED\t AGE")
 	for _, awsEksKubernetesRuntimeInstance := range *awsEksKubernetesRuntimeInstances {
+		region := ""
+		if awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Region != nil {
+			region = *awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Region
+		}
+		kubernetesRuntimeInstanceName := ""
+		if awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.KubernetesRuntimeInstance != nil &&
+			awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.KubernetesRuntimeInstance.Name != nil {
+			kubernetesRuntimeInstanceName = *awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.KubernetesRuntimeInstance.Name
+		}
+		awsEksDefinitionName := ""
+		if awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeDefinition != nil &&
+			awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeDefinition.Name != nil {
+			awsEksDefinitionName = *awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeDefinition.Name
+		}
+		reconciled := false
+		if awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Reconciled != nil {
+			reconciled = *awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Reconciled
+		}
+		age := ""
+		if awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Age != nil {
+			age = *awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Name, "\t",
-			*awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Region, "\t",
-			*awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.KubernetesRuntimeInstance.Name, "\t",
-			*awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeDefinition.Name, "\t",
-			*awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Reconciled, "\t",
-			*awsEksKubernetesRuntimeInstance.AwsEksKubernetesRuntimeInstance.Age,
+			region, "\t",
+			kubernetesRuntimeInstanceName, "\t",
+			awsEksDefinitionName, "\t",
+			reconciled, "\t",
+			age,
 		)
 	}
 	writer.Flush()

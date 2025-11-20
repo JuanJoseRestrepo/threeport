@@ -16,18 +16,26 @@ func outputGetv0ControlPlanesCmd(
 	controlPlanes *[]config_v0.ControlPlaneConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t CONTROL PLANE DEFINITION\t CONTROL PLANE INSTANCE\t AUTH ENABLED\t GENESIS CONTROL PLANE\t KUBERNETES RUNTIME INSTANCE\t AGE")
+	fmt.Fprintln(writer, "NAME\t CONTROL PLANE DEFINITION\t CONTROL PLANE INSTANCE\t AUTH ENABLED\t GENESIS CONTROL PLANE\t KUBERNETES RUNTIME INSTANCE\t AGE")
 	for _, controlPlane := range *controlPlanes {
+		kubernetesRuntimeInstanceName := ""
+		if controlPlane.ControlPlane.KubernetesRuntimeInstance != nil &&
+			controlPlane.ControlPlane.KubernetesRuntimeInstance.Name != nil {
+			kubernetesRuntimeInstanceName = *controlPlane.ControlPlane.KubernetesRuntimeInstance.Name
+		}
+		age := ""
+		if controlPlane.ControlPlane.Age != nil {
+			age = *controlPlane.ControlPlane.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*controlPlane.ControlPlane.Name, "\t",
 			*controlPlane.ControlPlane.Name, "\t",
 			*controlPlane.ControlPlane.Name, "\t",
 			*controlPlane.ControlPlane.AuthEnabled, "\t",
 			*controlPlane.ControlPlane.Genesis, "\t",
-			*controlPlane.ControlPlane.KubernetesRuntimeInstance.Name, "\t",
-			*controlPlane.ControlPlane.Age,
+			kubernetesRuntimeInstanceName, "\t",
+			age,
 		)
 	}
 	writer.Flush()
@@ -41,14 +49,17 @@ func outputGetv0ControlPlaneDefinitionsCmd(
 	controlPlaneDefinitions *[]config_v0.ControlPlaneDefinitionConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t AUTH ENABLED\t AGE")
+	fmt.Fprintln(writer, "NAME\t AUTH ENABLED\t AGE")
 	for _, controlPlaneDefinition := range *controlPlaneDefinitions {
+		age := ""
+		if controlPlaneDefinition.ControlPlaneDefinition.Age != nil {
+			age = *controlPlaneDefinition.ControlPlaneDefinition.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*controlPlaneDefinition.ControlPlaneDefinition.Name, "\t",
 			*controlPlaneDefinition.ControlPlaneDefinition.AuthEnabled, "\t",
-			*controlPlaneDefinition.ControlPlaneDefinition.Age,
+			age,
 		)
 	}
 	writer.Flush()
@@ -62,16 +73,29 @@ func outputGetv0ControlPlaneInstancesCmd(
 	controlPlaneInstances *[]config_v0.ControlPlaneInstanceConfig,
 ) error {
 	writer := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', 0)
-	fmt.Fprintln(writer, "VERSION\t NAME\t GENESIS CONTROL PLANE\t CONTROL PLANE DEFINITION\t KUBERNETES RUNTIME INSTANCE\t AGE")
+	fmt.Fprintln(writer, "NAME\t GENESIS CONTROL PLANE\t CONTROL PLANE DEFINITION\t KUBERNETES RUNTIME INSTANCE\t AGE")
 	for _, controlPlaneInstance := range *controlPlaneInstances {
+		controlPlaneDefinitionName := ""
+		if controlPlaneInstance.ControlPlaneInstance.ControlPlaneDefinition != nil &&
+			controlPlaneInstance.ControlPlaneInstance.ControlPlaneDefinition.Name != nil {
+			controlPlaneDefinitionName = *controlPlaneInstance.ControlPlaneInstance.ControlPlaneDefinition.Name
+		}
+		kubernetesRuntimeInstanceName := ""
+		if controlPlaneInstance.ControlPlaneInstance.KubernetesRuntimeInstance != nil &&
+			controlPlaneInstance.ControlPlaneInstance.KubernetesRuntimeInstance.Name != nil {
+			kubernetesRuntimeInstanceName = *controlPlaneInstance.ControlPlaneInstance.KubernetesRuntimeInstance.Name
+		}
+		age := ""
+		if controlPlaneInstance.ControlPlaneInstance.Age != nil {
+			age = *controlPlaneInstance.ControlPlaneInstance.Age
+		}
 		fmt.Fprintln(
 			writer,
-			"v0", "\t",
 			*controlPlaneInstance.ControlPlaneInstance.Name, "\t",
 			*controlPlaneInstance.ControlPlaneInstance.Genesis, "\t",
-			*controlPlaneInstance.ControlPlaneInstance.ControlPlaneDefinition.Name, "\t",
-			*controlPlaneInstance.ControlPlaneInstance.KubernetesRuntimeInstance.Name, "\t",
-			*controlPlaneInstance.ControlPlaneInstance.Age,
+			controlPlaneDefinitionName, "\t",
+			kubernetesRuntimeInstanceName, "\t",
+			age,
 		)
 	}
 	writer.Flush()
