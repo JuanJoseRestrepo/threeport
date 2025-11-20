@@ -72,7 +72,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAPIDeployment(
 	mapper *meta.RESTMapper,
 	dbCreds *auth.DbCreds,
 ) error {
-	apiImage := cpi.getImage(cpi.Opts.RestApiInfo.Name, cpi.Opts.RestApiInfo.ImageName, cpi.Opts.RestApiInfo.ImageRepo, cpi.Opts.RestApiInfo.ImageTag)
+	apiImage := cpi.getImage(cpi.Opts.RestApiInfo.Name, cpi.Opts.RestApiInfo.ImageName, cpi.Opts.RestApiInfo.ImageNamespace, cpi.Opts.RestApiInfo.ImageTag)
 	apiArgs := cpi.getAPIArgs()
 	apiVols, apiVolMounts, err := cpi.getAPIVolumes()
 	if err != nil {
@@ -83,7 +83,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAPIDeployment(
 
 	dbMigratorImage := fmt.Sprintf(
 		"%s/%s:%s",
-		cpi.Opts.DatabaseMigratorInfo.ImageRepo,
+		cpi.Opts.DatabaseMigratorInfo.ImageNamespace,
 		cpi.Opts.DatabaseMigratorInfo.ImageName,
 		cpi.Opts.DatabaseMigratorInfo.ImageTag,
 	)
@@ -318,7 +318,7 @@ func (cpi *ControlPlaneInstaller) InstallThreeportAPITLS(
 	kubeClient dynamic.Interface,
 	mapper *meta.RESTMapper,
 	authConfig *auth.AuthConfig,
-	serverAltName string,
+	serverAltNames ...string,
 ) error {
 	if authConfig != nil {
 		// generate server certificate
@@ -326,7 +326,7 @@ func (cpi *ControlPlaneInstaller) InstallThreeportAPITLS(
 			authConfig.CAConfig,
 			&authConfig.CAPrivateKey,
 			"threeport-api-server",
-			serverAltName,
+			serverAltNames...,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to generate server certificate and private key: %w", err)
@@ -520,7 +520,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAgentDeployment(
 	threeportInstanceName string,
 ) error {
 
-	agentImage := cpi.getImage(cpi.Opts.AgentInfo.Name, cpi.Opts.AgentInfo.ImageName, cpi.Opts.AgentInfo.ImageRepo, cpi.Opts.AgentInfo.ImageTag)
+	agentImage := cpi.getImage(cpi.Opts.AgentInfo.Name, cpi.Opts.AgentInfo.ImageName, cpi.Opts.AgentInfo.ImageNamespace, cpi.Opts.AgentInfo.ImageTag)
 	agentArgs := cpi.getAgentArgs()
 	agentVols, agentVolMounts, err := cpi.getControllerVolumes(*cpi.Opts.AgentInfo)
 	if err != nil {
@@ -1834,7 +1834,7 @@ func (cpi *ControlPlaneInstaller) getControllerDeployment(
 	controller v0.ControlPlaneComponent,
 ) (*unstructured.Unstructured, error) {
 
-	controllerImage := cpi.getImage(controller.Name, controller.ImageName, controller.ImageRepo, controller.ImageTag)
+	controllerImage := cpi.getImage(controller.Name, controller.ImageName, controller.ImageNamespace, controller.ImageTag)
 	controllerVols, controllerVolMounts, err := cpi.getControllerVolumes(controller)
 	if err != nil {
 		return nil, fmt.Errorf("could not get vols for controller %s: %w", controller.Name, err)
