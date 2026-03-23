@@ -54,6 +54,15 @@ type Options struct {
 	// AWS region code to install threeport control plane in.
 	AwsRegion string
 
+	// OCI region code to install threeport control plane in.
+	OciRegion string
+
+	// The OCI config profile to draw credentials from when using oke provider.
+	OciConfigProfile string
+
+	// The OCI compartment OCID to install threeport control plane in.
+	OciCompartmentOcid string
+
 	// Path to config file for threeport
 	CfgFile string
 
@@ -93,6 +102,9 @@ type Options struct {
 	// If true, run in debug mode. Appropriate for development environments only.
 	Debug bool
 
+	// If true, enable delve debugger for remote debugging. Only applicable when Debug is true.
+	Delve bool
+
 	// If true, live changes made in development will be live-reloaded into control plane components. Only applicable for kind infra-provider.
 	LiveReload bool
 
@@ -105,8 +117,8 @@ type Options struct {
 	// Port mappings for kind infra provider
 	KindPortMappings []string
 
-	// If true, an EKS load balancer is provisioned for the threeport API.
-	RestApiEksLoadBalancer bool
+	// If true, a cloud load balancer is provisioned for the threeport API.
+	RestApiLoadBalancer bool
 
 	// verbose logging
 	Verbose bool
@@ -117,8 +129,8 @@ type Options struct {
 	// A general map to pass around information between various install phases.
 	AdditionalOptions map[string]interface{}
 
-	// Skip teardown of control plane components if an error is encountered.
-	SkipTeardown bool
+	// Automatically tear down control plane resources if an error is encountered.
+	TeardownOnFailure bool
 
 	// Create and connect local container registry for local control plane
 	// clusters.

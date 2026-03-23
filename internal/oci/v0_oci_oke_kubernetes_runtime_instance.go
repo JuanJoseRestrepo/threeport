@@ -4,6 +4,8 @@ package oci
 
 import (
 	logr "github.com/go-logr/logr"
+
+	"github.com/threeport/threeport/internal/provider"
 	v0 "github.com/threeport/threeport/pkg/api/v0"
 	controller "github.com/threeport/threeport/pkg/controller/v0"
 )
@@ -15,7 +17,13 @@ func v0OciOkeKubernetesRuntimeInstanceCreated(
 	ociOkeKubernetesRuntimeInstance *v0.OciOkeKubernetesRuntimeInstance,
 	log *logr.Logger,
 ) (int64, error) {
-	return 0, nil
+	reconLog := log.WithValues(
+		"ociOkeKubernetesRuntimeInstanceID", *ociOkeKubernetesRuntimeInstance.ID,
+		"ociOkeKubernetesRuntimeInstanceName", *ociOkeKubernetesRuntimeInstance.Name,
+	)
+
+	p := newOkeLifecycleProvider(r, ociOkeKubernetesRuntimeInstance, &reconLog)
+	return provider.HandleInfraCreate(p, &reconLog)
 }
 
 // v0OciOkeKubernetesRuntimeInstanceUpdated performs reconciliation when a v0 OciOkeKubernetesRuntimeInstance
@@ -35,5 +43,11 @@ func v0OciOkeKubernetesRuntimeInstanceDeleted(
 	ociOkeKubernetesRuntimeInstance *v0.OciOkeKubernetesRuntimeInstance,
 	log *logr.Logger,
 ) (int64, error) {
-	return 0, nil
+	reconLog := log.WithValues(
+		"ociOkeKubernetesRuntimeInstanceID", *ociOkeKubernetesRuntimeInstance.ID,
+		"ociOkeKubernetesRuntimeInstanceName", *ociOkeKubernetesRuntimeInstance.Name,
+	)
+
+	p := newOkeLifecycleProvider(r, ociOkeKubernetesRuntimeInstance, &reconLog)
+	return provider.HandleInfraDelete(p, &reconLog)
 }

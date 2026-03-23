@@ -16,6 +16,7 @@ import (
 var (
 	observabilityName       string
 	observabilityConfigPath string
+	observabilityStdin      bool
 	observabilityVersion    string
 	observabilityOutput     string
 )
@@ -49,9 +50,9 @@ var GetObservabilityStacksCmd = &cobra.Command{
 			// load observability stack values
 			observabilityStackConfig := config_v0.ObservabilityStackConfig{}
 			if observabilityConfigPath != "" {
-				configContent, err := os.ReadFile(observabilityConfigPath)
+				configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &observabilityStackConfig); err != nil {
@@ -147,9 +148,9 @@ var CreateObservabilityStackCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read observability stack config
-		configContent, err := os.ReadFile(observabilityConfigPath)
+		configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -199,7 +200,10 @@ func init() {
 		&observabilityConfigPath,
 		"config", "c", "", "Path to file with observability stack config.",
 	)
-	CreateObservabilityStackCmd.MarkFlagRequired("config")
+	CreateObservabilityStackCmd.Flags().BoolVar(
+		&observabilityStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateObservabilityStackCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -224,9 +228,9 @@ var DeleteObservabilityStackCmd = &cobra.Command{
 		}
 
 		// read observability stack config
-		configContent, err := os.ReadFile(observabilityConfigPath)
+		configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -305,9 +309,9 @@ var GetObservabilityStackDefinitionsCmd = &cobra.Command{
 			// load values
 			observabilityStackDefinitionConfig := config_v0.ObservabilityStackDefinitionConfig{}
 			if observabilityConfigPath != "" {
-				configContent, err := os.ReadFile(observabilityConfigPath)
+				configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &observabilityStackDefinitionConfig); err != nil {
@@ -403,9 +407,9 @@ var CreateObservabilityStackDefinitionCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read observability stack definition config
-		configContent, err := os.ReadFile(observabilityConfigPath)
+		configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create observability stack definition based on version
@@ -443,7 +447,10 @@ func init() {
 		&observabilityConfigPath,
 		"config", "c", "", "Path to file with observability stack definition config.",
 	)
-	CreateObservabilityStackDefinitionCmd.MarkFlagRequired("config")
+	CreateObservabilityStackDefinitionCmd.Flags().BoolVar(
+		&observabilityStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateObservabilityStackDefinitionCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -467,9 +474,9 @@ var ReplaceObservabilityStackDefinitionCmd = &cobra.Command{
 		case "v0":
 			var observabilityStackDefinitionConfig config_v0.ObservabilityStackDefinitionConfig
 			// load observability stack definition config
-			configContent, err := os.ReadFile(observabilityConfigPath)
+			configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &observabilityStackDefinitionConfig); err != nil {
@@ -503,7 +510,10 @@ func init() {
 		&observabilityConfigPath,
 		"config", "c", "", "Path to file with observability stack definition config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceObservabilityStackDefinitionCmd.MarkFlagRequired("config")
+	ReplaceObservabilityStackDefinitionCmd.Flags().BoolVar(
+		&observabilityStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceObservabilityStackDefinitionCmd.Flags().StringVarP(
 		&observabilityName,
 		"name", "n", "", "Name of existing observability stack definition to replace.  If the name in the observability stack definition config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -543,9 +553,9 @@ var DeleteObservabilityStackDefinitionCmd = &cobra.Command{
 			var observabilityStackDefinitionConfig config_v0.ObservabilityStackDefinitionConfig
 			if observabilityConfigPath != "" {
 				// load observability stack definition config
-				configContent, err := os.ReadFile(observabilityConfigPath)
+				configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &observabilityStackDefinitionConfig); err != nil {
@@ -628,9 +638,9 @@ var GetObservabilityStackInstancesCmd = &cobra.Command{
 			// load values
 			observabilityStackInstanceConfig := config_v0.ObservabilityStackInstanceConfig{}
 			if observabilityConfigPath != "" {
-				configContent, err := os.ReadFile(observabilityConfigPath)
+				configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &observabilityStackInstanceConfig); err != nil {
@@ -726,9 +736,9 @@ var CreateObservabilityStackInstanceCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read observability stack instance config
-		configContent, err := os.ReadFile(observabilityConfigPath)
+		configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create observability stack instance based on version
@@ -766,7 +776,10 @@ func init() {
 		&observabilityConfigPath,
 		"config", "c", "", "Path to file with observability stack instance config.",
 	)
-	CreateObservabilityStackInstanceCmd.MarkFlagRequired("config")
+	CreateObservabilityStackInstanceCmd.Flags().BoolVar(
+		&observabilityStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateObservabilityStackInstanceCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -790,9 +803,9 @@ var ReplaceObservabilityStackInstanceCmd = &cobra.Command{
 		case "v0":
 			var observabilityStackInstanceConfig config_v0.ObservabilityStackInstanceConfig
 			// load observability stack instance config
-			configContent, err := os.ReadFile(observabilityConfigPath)
+			configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &observabilityStackInstanceConfig); err != nil {
@@ -826,7 +839,10 @@ func init() {
 		&observabilityConfigPath,
 		"config", "c", "", "Path to file with observability stack instance config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceObservabilityStackInstanceCmd.MarkFlagRequired("config")
+	ReplaceObservabilityStackInstanceCmd.Flags().BoolVar(
+		&observabilityStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceObservabilityStackInstanceCmd.Flags().StringVarP(
 		&observabilityName,
 		"name", "n", "", "Name of existing observability stack instance to replace.  If the name in the observability stack instance config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -866,9 +882,9 @@ var DeleteObservabilityStackInstanceCmd = &cobra.Command{
 			var observabilityStackInstanceConfig config_v0.ObservabilityStackInstanceConfig
 			if observabilityConfigPath != "" {
 				// load observability stack instance config
-				configContent, err := os.ReadFile(observabilityConfigPath)
+				configContent, err := cli.ReadConfigContent(observabilityConfigPath, observabilityStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &observabilityStackInstanceConfig); err != nil {

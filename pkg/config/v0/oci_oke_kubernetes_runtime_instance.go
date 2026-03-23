@@ -6,8 +6,11 @@ import (
 	errors "errors"
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/threeport/threeport/internal/kubernetes-runtime/mapping"
 	api_v0 "github.com/threeport/threeport/pkg/api/v0"
+	client_lib "github.com/threeport/threeport/pkg/client/lib/v0"
 	client_v0 "github.com/threeport/threeport/pkg/client/v0"
 	util "github.com/threeport/threeport/pkg/util/v0"
 )
@@ -24,8 +27,10 @@ type OciOkeKubernetesRuntimeInstanceConfig struct {
 // the OciOkeKubernetesRuntimeInstance API object.
 type OciOkeKubernetesRuntimeInstanceValues struct {
 	Name                              *string                                  `json:"Name,omitempty" yaml:"Name,omitempty"`
+	OciProviderName                   *string                                  `json:"OciProviderName,omitempty" yaml:"OciProviderName,omitempty"`
 	Region                            *string                                  `json:"Region,omitempty" yaml:"Region,omitempty"`
 	OciOkeKubernetesRuntimeDefinition *OciOkeKubernetesRuntimeDefinitionValues `json:"OciOkeKubernetesRuntimeDefinition,omitempty" yaml:"OciOkeKubernetesRuntimeDefinition,omitempty"`
+	Status                            *string                                  `json:"Status,omitempty" yaml:"Status,omitempty"`
 	Age                               *string                                  `json:"Age,omitempty" yaml:"Age,omitempty"`
 }
 
@@ -60,8 +65,19 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Get(
 
 	// assemble config objects from API objects
 	for _, ociOkeKubernetesRuntimeInstance := range *ociOkeKubernetesRuntimeInstances {
-		// related object
+		// related objects
 		var ociOkeKubernetesRuntimeDefinition *OciOkeKubernetesRuntimeDefinitionValues
+
+		// get OCI provider name
+		ociProvider, err := client_v0.GetOciProviderByID(
+			apiClient,
+			apiEndpoint,
+			*ociOkeKubernetesRuntimeInstance.OciProviderID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get OCI provider by ID: %w", err)
+		}
+		ociProviderName := ociProvider.Name
 
 		// get OCI OKE kubernetes runtime definition
 		if ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeDefinitionID != nil {
@@ -71,21 +87,8 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Get(
 				*ociOkeKubernetesRuntimeInstance.OciOkeKubernetesRuntimeDefinitionID,
 			)
 			if err == nil {
-				// get OCI account name
-				var ociAccountName *string
-				if ociOkeKubernetesRuntimeDefinitionObj.OciAccountID != nil {
-					ociAccount, err := client_v0.GetOciAccountByID(
-						apiClient,
-						apiEndpoint,
-						*ociOkeKubernetesRuntimeDefinitionObj.OciAccountID,
-					)
-					if err == nil {
-						ociAccountName = ociAccount.Name
-					}
-				}
 				ociOkeKubernetesRuntimeDefinition = &OciOkeKubernetesRuntimeDefinitionValues{
 					Name:            ociOkeKubernetesRuntimeDefinitionObj.Name,
-					OciAccountName:  ociAccountName,
 					WorkerNodeShape: ociOkeKubernetesRuntimeDefinitionObj.WorkerNodeShape,
 					WorkerNodeInitialCount: func() *int {
 						if ociOkeKubernetesRuntimeDefinitionObj.WorkerNodeInitialCount != nil {
@@ -98,11 +101,16 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Get(
 			}
 		}
 
+		// derive status from reconciliation state
+		status := ociOkeRuntimeInstanceStatus(&ociOkeKubernetesRuntimeInstance)
+
 		ociOkeKubernetesRuntimeInstanceConfig := OciOkeKubernetesRuntimeInstanceConfig{
 			OciOkeKubernetesRuntimeInstance: OciOkeKubernetesRuntimeInstanceValues{
 				Name:                              ociOkeKubernetesRuntimeInstance.Name,
+				OciProviderName:                   ociProviderName,
 				Region:                            ociOkeKubernetesRuntimeInstance.Region,
 				OciOkeKubernetesRuntimeDefinition: ociOkeKubernetesRuntimeDefinition,
+				Status:                            &status,
 				Age:                               util.Ptr(util.GetAgeFormatted(ociOkeKubernetesRuntimeInstance.CreatedAt)),
 			},
 		}
@@ -110,6 +118,30 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Get(
 	}
 
 	return &ociOkeKubernetesRuntimeInstanceConfigs, nil
+}
+
+// ociOkeRuntimeInstanceStatus derives a human-readable status string from
+// the reconciliation fields on an OciOkeKubernetesRuntimeInstance.
+func ociOkeRuntimeInstanceStatus(instance *api_v0.OciOkeKubernetesRuntimeInstance) string {
+	if instance.DeletionConfirmed != nil {
+		return "Deleted"
+	}
+	if instance.DeletionAcknowledged != nil {
+		return "Deleting"
+	}
+	if instance.DeletionScheduled != nil {
+		return "DeletePending"
+	}
+	if instance.CreationFailed != nil && *instance.CreationFailed {
+		return "Failed"
+	}
+	if instance.CreationConfirmed != nil {
+		return "Ready"
+	}
+	if instance.CreationAcknowledged != nil {
+		return "Creating"
+	}
+	return "Pending"
 }
 
 // Create creates a oci oke kubernetes runtime instance in the Threeport API.
@@ -123,18 +155,52 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Create(
 		return nil, fmt.Errorf("failed to validate values for oci oke kubernetes runtime instance with name %s: %w", *ociOkeKubernetesRuntimeInstanceValues.Name, err)
 	}
 
-	// get OCI OKE kubernetes runtime definition by name
-	var ociOkeKubernetesRuntimeDefinitionID *uint
-	if ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition != nil && ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition.Name != nil {
-		ociOkeKubernetesRuntimeDefinition, err := client_v0.GetOciOkeKubernetesRuntimeDefinitionByName(
-			apiClient,
-			apiEndpoint,
-			*ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition.Name,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get OCI OKE kubernetes runtime definition with name %s: %w", *ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition.Name, err)
-		}
-		ociOkeKubernetesRuntimeDefinitionID = ociOkeKubernetesRuntimeDefinition.ID
+	// get OCI provider by name
+	ociProvider, err := client_v0.GetOciProviderByName(
+		apiClient,
+		apiEndpoint,
+		*ociOkeKubernetesRuntimeInstanceValues.OciProviderName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OCI provider with name %s: %w", *ociOkeKubernetesRuntimeInstanceValues.OciProviderName, err)
+	}
+
+	// look up OCI OKE kubernetes runtime definition by name
+	ociOkeKubernetesRuntimeDefinition, err := client_v0.GetOciOkeKubernetesRuntimeDefinitionByName(
+		apiClient,
+		apiEndpoint,
+		*ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition.Name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OCI OKE kubernetes runtime definition with name %s: %w", *ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition.Name, err)
+	}
+
+	// get location for OCI region
+	location, err := mapping.GetLocationForOciRegion(*ociOkeKubernetesRuntimeInstanceValues.Region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Threeport location for OCI region %s: %w", *ociOkeKubernetesRuntimeInstanceValues.Region, err)
+	}
+
+	// construct kubernetes runtime instance
+	controlPlaneHost := false
+	defaultRuntime := false
+	kubernetesRuntimeInstance := api_v0.KubernetesRuntimeInstance{
+		Instance: api_v0.Instance{
+			Name: ociOkeKubernetesRuntimeInstanceValues.Name,
+		},
+		Reconciliation: api_v0.Reconciliation{
+			Reconciled: util.Ptr(true),
+		},
+		Location:                      &location,
+		ThreeportControlPlaneHost:     &controlPlaneHost,
+		DefaultRuntime:                &defaultRuntime,
+		KubernetesRuntimeDefinitionID: ociOkeKubernetesRuntimeDefinition.KubernetesRuntimeDefinitionID,
+	}
+
+	// create kubernetes runtime instance
+	createdKubernetesRuntimeInstance, err := client_v0.CreateKubernetesRuntimeInstance(apiClient, apiEndpoint, &kubernetesRuntimeInstance)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes runtime instance for OCI OKE instance: %w", err)
 	}
 
 	// construct oci oke kubernetes runtime instance object
@@ -142,8 +208,10 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Create(
 		Instance: api_v0.Instance{
 			Name: ociOkeKubernetesRuntimeInstanceValues.Name,
 		},
+		OciProviderID:                       ociProvider.ID,
 		Region:                              ociOkeKubernetesRuntimeInstanceValues.Region,
-		OciOkeKubernetesRuntimeDefinitionID: ociOkeKubernetesRuntimeDefinitionID,
+		OciOkeKubernetesRuntimeDefinitionID: ociOkeKubernetesRuntimeDefinition.ID,
+		KubernetesRuntimeInstanceID:         createdKubernetesRuntimeInstance.ID,
 	}
 
 	// create oci oke kubernetes runtime instance
@@ -194,6 +262,20 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Replace(
 		return nil, fmt.Errorf("failed to find oci oke kubernetes runtime instance with name %s: %w", name, err)
 	}
 
+	// get OCI provider by name
+	var ociProviderID *uint
+	if ociOkeKubernetesRuntimeInstanceValues.OciProviderName != nil {
+		ociProvider, err := client_v0.GetOciProviderByName(
+			apiClient,
+			apiEndpoint,
+			*ociOkeKubernetesRuntimeInstanceValues.OciProviderName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get OCI provider with name %s: %w", *ociOkeKubernetesRuntimeInstanceValues.OciProviderName, err)
+		}
+		ociProviderID = ociProvider.ID
+	}
+
 	// get OCI OKE kubernetes runtime definition by name
 	var ociOkeKubernetesRuntimeDefinitionID *uint
 	if ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition != nil && ociOkeKubernetesRuntimeInstanceValues.OciOkeKubernetesRuntimeDefinition.Name != nil {
@@ -216,6 +298,7 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Replace(
 		Instance: api_v0.Instance{
 			Name: ociOkeKubernetesRuntimeInstanceValues.Name,
 		},
+		OciProviderID:                       ociProviderID,
 		Region:                              ociOkeKubernetesRuntimeInstanceValues.Region,
 		OciOkeKubernetesRuntimeDefinitionID: ociOkeKubernetesRuntimeDefinitionID,
 	}
@@ -269,10 +352,79 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Delete(
 		return nil, fmt.Errorf("failed to delete oci oke kubernetes runtime instance from Threeport API: %w", err)
 	}
 
+	// wait for OCI OKE kubernetes runtime instance to be deleted
+	if err := util.Retry(90, 10, func() error {
+		if _, err := client_v0.GetOciOkeKubernetesRuntimeInstanceByName(
+			apiClient,
+			apiEndpoint,
+			*ociOkeKubernetesRuntimeInstance.Name,
+		); err == nil {
+			return errors.New("OCI OKE kubernetes runtime instance not deleted")
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("timed out waiting for OCI OKE kubernetes runtime instance to be deleted: %w", err)
+	}
+
+	// get associated kubernetes runtime instance
+	kubernetesRuntimeInstance, err := client_v0.GetKubernetesRuntimeInstanceByID(
+		apiClient,
+		apiEndpoint,
+		*ociOkeKubernetesRuntimeInstance.KubernetesRuntimeInstanceID,
+	)
+	if err != nil {
+		// if the kubernetes runtime instance wasn't found, there's no more to
+		// do - return the error if something other than 'object not found'
+		if !errors.Is(err, client_lib.ErrObjectNotFound) {
+			return nil, fmt.Errorf("failed to get associated kubernetes runtime instance: %w", err)
+		}
+	}
+	// if kubernetes runtime found, remove it
+	if err == nil {
+		// update kubernetes runtime instance to set the deletion confirmed
+		// timestamp - this will allow deletion of the k8s runtime object without
+		// triggering unnecessary reconciliation
+		now := time.Now().UTC()
+		kubernetesRuntimeInstance.DeletionConfirmed = &now
+		_, err = client_v0.UpdateKubernetesRuntimeInstance(
+			apiClient,
+			apiEndpoint,
+			kubernetesRuntimeInstance,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update associated kubernetes runtime instance to set deletion confirmed: %w", err)
+		}
+
+		// delete kubernetes runtime instance
+		_, err = client_v0.DeleteKubernetesRuntimeInstance(
+			apiClient,
+			apiEndpoint,
+			*ociOkeKubernetesRuntimeInstance.KubernetesRuntimeInstanceID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to delete associated kubernetes runtime instance: %w", err)
+		}
+
+		// wait for kubernetes runtime instance to be deleted
+		if err := util.Retry(10, 1, func() error {
+			if _, err := client_v0.GetKubernetesRuntimeInstanceByName(
+				apiClient,
+				apiEndpoint,
+				*kubernetesRuntimeInstance.Name,
+			); err == nil {
+				return errors.New("kubernetes runtime instance not deleted")
+			}
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("timed out waiting for kubernetes runtime instance to be deleted: %w", err)
+		}
+	}
+
 	// construct deleted oci oke kubernetes runtime instance config
 	deletedOciOkeKubernetesRuntimeInstanceConfig := &OciOkeKubernetesRuntimeInstanceConfig{
 		OciOkeKubernetesRuntimeInstance: OciOkeKubernetesRuntimeInstanceValues{
-			Name: deletedOciOkeKubernetesRuntimeInstance.Name,
+			Name:   deletedOciOkeKubernetesRuntimeInstance.Name,
+			Region: deletedOciOkeKubernetesRuntimeInstance.Region,
 		},
 	}
 
@@ -287,6 +439,11 @@ func (o *OciOkeKubernetesRuntimeInstanceConfig) Validate() error {
 	// ensure name is set
 	if ociOkeKubernetesRuntimeInstanceValues.Name == nil {
 		multiError.AppendError(errors.New("missing required field in config: Name"))
+	}
+
+	// ensure OciProviderName is set
+	if ociOkeKubernetesRuntimeInstanceValues.OciProviderName == nil {
+		multiError.AppendError(errors.New("missing required field in config: OciProviderName"))
 	}
 
 	// ensure Region is set

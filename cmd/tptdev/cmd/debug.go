@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/util/homedir"
 
-	auth "github.com/threeport/threeport/pkg/auth/v0"
 	cli "github.com/threeport/threeport/pkg/cli/v0"
 	client_lib "github.com/threeport/threeport/pkg/client/lib/v0"
 	installer "github.com/threeport/threeport/pkg/threeport-installer/v0"
@@ -18,6 +17,7 @@ import (
 )
 
 var disable bool
+var delve bool
 var liveReload bool
 var authEnabled bool
 var debugComponentNames string
@@ -51,6 +51,7 @@ var DebugCmd = &cobra.Command{
 		// set CreateOrUpdateKubeResources so we can update existing deployments
 		cpi.Opts.CreateOrUpdateKubeResources = true
 		cpi.Opts.Debug = !disable
+		cpi.Opts.Delve = delve
 		cpi.Opts.LiveReload = liveReload
 		cpi.Opts.DevEnvironment = false
 		cpi.Opts.AuthEnabled = authEnabled
@@ -63,13 +64,6 @@ var DebugCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// generate new DB client credentials
-		dbCreds, err := auth.GenerateDbCreds(controlPlaneNamespace)
-		if err != nil {
-			cli.Error("failed to generated DB client credentials", err)
-			os.Exit(1)
-		}
-
 		// update deployments
 		for _, component := range debugComponents {
 			switch component.Name {
@@ -77,7 +71,7 @@ var DebugCmd = &cobra.Command{
 				if err := cpi.UpdateThreeportAPIDeployment(
 					dynamicKubeClient,
 					&mapper,
-					dbCreds,
+					nil,
 				); err != nil {
 					cli.Error("failed to apply threeport rest api", err)
 					os.Exit(1)
@@ -87,7 +81,6 @@ var DebugCmd = &cobra.Command{
 				if err := cpi.UpdateThreeportAgentDeployment(
 					dynamicKubeClient,
 					&mapper,
-					controlPlaneNamespace,
 				); err != nil {
 					cli.Error("failed to apply threeport agent", err)
 					os.Exit(1)
@@ -124,6 +117,10 @@ func init() {
 	DebugCmd.Flags().BoolVar(
 		&disable,
 		"disable", false, "Disable debug mode.",
+	)
+	DebugCmd.Flags().BoolVar(
+		&delve,
+		"delve", false, "Enable delve debugger for remote debugging.",
 	)
 	DebugCmd.Flags().BoolVar(
 		&liveReload,

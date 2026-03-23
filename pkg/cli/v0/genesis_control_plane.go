@@ -2,6 +2,7 @@ package v0
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,8 +38,8 @@ type GenesisControlPlaneCLIArgs struct {
 	AwsConfigProfile      string
 	AwsConfigEnv          bool
 	AwsRegion             string
-	AwsRoleArn            string
-	AwsSerialNumber       string
+	OciRegion             string
+	OciConfigProfile      string
 	CfgFile               string
 	ControlPlaneImageRepo string
 	ControlPlaneImageTag  string
@@ -54,7 +55,7 @@ type GenesisControlPlaneCLIArgs struct {
 	ThreeportPath         string
 	Debug                 bool
 	Verbose               bool
-	SkipTeardown          bool
+	TeardownOnFailure     bool
 	ControlPlaneOnly      bool
 	InfraOnly             bool
 	KindPortMappings      []string
@@ -73,7 +74,7 @@ type Uninstaller struct {
 	cleanConfig            *bool
 	cpi                    *threeport.ControlPlaneInstaller
 	awsConfig              *aws.Config
-	skipTeardown           *bool
+	teardownOnFailure      *bool
 }
 
 const tier = threeport.ControlPlaneTierDev
@@ -144,6 +145,8 @@ func (a *GenesisControlPlaneCLIArgs) CreateInstaller() (*threeport.ControlPlaneI
 	cpi.Opts.AwsConfigProfile = a.AwsConfigProfile
 	cpi.Opts.AwsConfigEnv = a.AwsConfigEnv
 	cpi.Opts.AwsRegion = a.AwsRegion
+	cpi.Opts.OciRegion = a.OciRegion
+	cpi.Opts.OciConfigProfile = a.OciConfigProfile
 	cpi.Opts.CfgFile = a.CfgFile
 	cpi.Opts.CreateRootDomain = a.CreateRootDomain
 	cpi.Opts.CreateAdminEmail = a.CreateAdminEmail
@@ -161,8 +164,8 @@ func (a *GenesisControlPlaneCLIArgs) CreateInstaller() (*threeport.ControlPlaneI
 	cpi.Opts.CreateOrUpdateKubeResources = false
 	cpi.Opts.ControlPlaneOnly = a.ControlPlaneOnly
 	cpi.Opts.InfraOnly = a.InfraOnly
-	cpi.Opts.RestApiEksLoadBalancer = true
-	cpi.Opts.SkipTeardown = a.SkipTeardown
+	cpi.Opts.RestApiLoadBalancer = true
+	cpi.Opts.TeardownOnFailure = a.TeardownOnFailure
 	cpi.Opts.LocalRegistry = a.LocalRegistry
 	cpi.Opts.KindPortMappings = a.KindPortMappings
 
@@ -191,21 +194,33 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 
 	// configure uninstaller
 	uninstaller := &Uninstaller{
-		cpi:          cpi,
-		skipTeardown: &cpi.Opts.SkipTeardown,
-		cleanConfig:  util.Ptr(true),
+		cpi:               cpi,
+		teardownOnFailure: &cpi.Opts.TeardownOnFailure,
+		cleanConfig:       util.Ptr(true),
 	}
 
 	// check threeport config to see if it is empty
 	threeportInstanceConfigEmpty := threeportConfig.CheckThreeportConfigEmpty()
-	if !threeportInstanceConfigEmpty && !cpi.Opts.ForceOverwriteConfig {
-		return ErrThreeportConfigAlreadyExists
-	}
 
+	var threeportControlPlaneConfig *ControlPlane
 	genesis := true
 
-	threeportConfig.ControlPlanes = []ControlPlane{}
-	threeportControlPlaneConfig := &ControlPlane{}
+	if cpi.Opts.ControlPlaneOnly && !threeportInstanceConfigEmpty {
+		// for control-plane-only runs, load existing config instead of creating fresh
+		existingConfig, err := threeportConfig.GetControlPlaneConfig(cpi.Opts.ControlPlaneName)
+		if err != nil {
+			return fmt.Errorf("control plane config '%s' not found for --control-plane-only run: %w", cpi.Opts.ControlPlaneName, err)
+		}
+		threeportControlPlaneConfig = existingConfig
+	} else {
+		// for fresh installs, check if config already exists
+		if !threeportInstanceConfigEmpty && !cpi.Opts.ForceOverwriteConfig {
+			return ErrThreeportConfigAlreadyExists
+		}
+		// reset config and create fresh control plane config
+		threeportConfig.ControlPlanes = []ControlPlane{}
+		threeportControlPlaneConfig = &ControlPlane{}
+	}
 
 	// create local registry if requested
 	if cpi.Opts.LocalRegistry {
@@ -231,6 +246,7 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	uninstaller.controlPlane = &controlPlane
 
 	var kubernetesRuntimeInfra provider.KubernetesRuntimeInfra
+	var tokenGenerator func() (string, error)
 	var threeportAPIEndpoint string
 	var callerIdentity *sts.GetCallerIdentityOutput
 	kubeConnectionInfo := &kube.KubeConnectionInfo{}
@@ -238,7 +254,6 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	uninstaller.awsConfig = &awsConfigUser
 	awsConfigResourceManager := &aws.Config{}
 	switch controlPlane.InfraProvider {
-
 	// deploy infrastructure
 	case v0.KubernetesRuntimeInfraProviderKind:
 		if err := DeployKindInfra(
@@ -266,26 +281,15 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 			return fmt.Errorf("failed to deploy eks infrastructure: %w", err)
 		}
 	case v0.KubernetesRuntimeInfraProviderOKE:
-		// Create OKE infrastructure
-		kubernetesRuntimeInfraOKE := provider.KubernetesRuntimeInfraOKE{
-			RuntimeInstanceName:    provider.ThreeportRuntimeName(cpi.Opts.ControlPlaneName),
-			WorkerNodeShape:        "VM.Standard.A1.Flex",
-			Version:                "v1.32.1",
-			WorkerNodeInitialCount: int32(2),
-		}
-		kubernetesRuntimeInfra = &kubernetesRuntimeInfraOKE
-		uninstaller.kubernetesRuntimeInfra = &kubernetesRuntimeInfraOKE
-
-		if cpi.Opts.ControlPlaneOnly {
-			kubeConnectionInfo, err = kubernetesRuntimeInfraOKE.GetConnection()
-			if err != nil {
-				return fmt.Errorf("failed to get connection info for OKE kubernetes runtime: %w", err)
-			}
-		} else {
-			kubeConnectionInfo, err = kubernetesRuntimeInfra.Create()
-			if err != nil {
-				return uninstaller.cleanOnCreateError("failed to create control plane infra for threeport", err)
-			}
+		if err := DeployOkeInfra(
+			cpi,
+			threeportControlPlaneConfig,
+			threeportConfig,
+			&kubernetesRuntimeInfra,
+			kubeConnectionInfo,
+			uninstaller,
+		); err != nil {
+			return fmt.Errorf("failed to deploy oke infrastructure: %w", err)
 		}
 	}
 
@@ -363,6 +367,20 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 		}
 	case v0.KubernetesRuntimeInfraProviderOKE:
 		kubernetesRuntimeInfraOKE := kubernetesRuntimeInfra.(*provider.KubernetesRuntimeInfraOKE)
+
+		// build token generator for automatic refresh during bootstrap
+		okeClusterOCID, err := kubernetesRuntimeInfraOKE.GetClusterOCID(
+			provider.ThreeportRuntimeName(cpi.Opts.ControlPlaneName),
+		)
+		if err != nil {
+			return uninstaller.cleanOnCreateError("failed to get OKE cluster OCID for token refresh", err)
+		}
+		okeConfigProvider := kubernetesRuntimeInfraOKE.ConfigProvider
+		tokenGenerator = func() (string, error) {
+			t, _, err := util.GenerateOkeToken(okeClusterOCID, okeConfigProvider)
+			return t, err
+		}
+
 		location, err := mapping.GetLocationForOciRegion(kubernetesRuntimeInfraOKE.Region)
 		if err != nil {
 			return uninstaller.cleanOnCreateError(
@@ -388,15 +406,24 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	}
 
 	// get kubernetes client and mapper for use with kube API
-	// we don't have a client or endpoint for threeport API yet - but those are
-	// only used when a token refresh is needed and that should not be necessary
-	dynamicKubeClient, mapper, err := kube.GetClient(
-		kubernetesRuntimeInstance,
-		false,
-		nil,
-		"",
-		"",
-	)
+	// if a token generator is available (OKE), use it to automatically refresh
+	// the bearer token on each request, avoiding expiration during bootstrap
+	var dynamicKubeClient dynamic.Interface
+	var mapper *meta.RESTMapper
+	if tokenGenerator != nil {
+		dynamicKubeClient, mapper, err = kube.GetClientWithTokenRefresh(
+			kubernetesRuntimeInstance,
+			tokenGenerator,
+		)
+	} else {
+		dynamicKubeClient, mapper, err = kube.GetClient(
+			kubernetesRuntimeInstance,
+			false,
+			nil,
+			"",
+			"",
+		)
+	}
 	if err != nil {
 		return uninstaller.cleanOnCreateError("failed to get a Kubernetes client and mapper", err)
 	}
@@ -409,11 +436,11 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 		return uninstaller.cleanOnCreateError("failed to generated DB client credentials", err)
 	}
 
-	// install the threeport control plane dependencies
+	// install the threeport control plane dependencies — deployed immediately
+	// so NATS and CockroachDB start initializing while certs are generated
 	if err := cpi.InstallThreeportControlPlaneDependencies(
 		dynamicKubeClient,
 		mapper,
-		cpi.Opts.InfraProvider,
 		encryptionKey,
 		dbCreds,
 	); err != nil {
@@ -424,13 +451,15 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	var authConfig *auth.AuthConfig
 	var clientCredentials *Credential
 	if cpi.Opts.AuthEnabled {
-		// get auth config
+		// generate certificate authority
+		Info("Generating certificate authority for threeport API")
 		authConfig, err = auth.GetAuthConfig()
 		if err != nil {
 			return uninstaller.cleanOnCreateError("failed to get auth config", err)
 		}
 
 		// generate client certificate
+		Info("Generating client certificate")
 		clientCertificate, clientPrivateKey, err := auth.GenerateCertificate(
 			authConfig.CAConfig,
 			&authConfig.CAPrivateKey,
@@ -446,10 +475,21 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 			ClientKey:  util.Base64Encode(clientPrivateKey),
 		}
 
-		// update threeport config with auth info
+		// update threeport config with auth info, replacing any existing
+		// credential with the same name to avoid stale certs
 		if threeportConfig, err = threeportControlPlaneConfig.UpdateThreeportConfigInstance(func(c *ControlPlane) {
 			c.AuthEnabled = true
-			c.Credentials = append(c.Credentials, *clientCredentials)
+			replaced := false
+			for i, cred := range c.Credentials {
+				if cred.Name == clientCredentials.Name {
+					c.Credentials[i] = *clientCredentials
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				c.Credentials = append(c.Credentials, *clientCredentials)
+			}
 			c.CACert = authConfig.CABase64Encoded
 		}); err != nil {
 			return uninstaller.cleanOnCreateError("failed to update threeport config", err)
@@ -474,6 +514,36 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 		return uninstaller.cleanOnCreateError("failed to run custom preInstall function", err)
 	}
 
+	// for kind, the API endpoint is known upfront so we can install TLS
+	// secrets before deploying the API server to avoid mount failures
+	if controlPlane.InfraProvider == v0.KubernetesRuntimeInfraProviderKind {
+		// update threeport config with api endpoint
+		var err error
+		threeportAPIEndpoint = threeport.GetLocalThreeportAPIEndpoint(cpi.Opts.AuthEnabled)
+		if threeportConfig, err = threeportControlPlaneConfig.UpdateThreeportConfigInstance(func(c *ControlPlane) {
+			c.APIServer = threeportAPIEndpoint
+		}); err != nil {
+			return fmt.Errorf("failed to update threeport config: %w", err)
+		}
+
+		// install TLS assets before API deployment so secrets exist when
+		// the pod mounts them
+		if cpi.Opts.AuthEnabled {
+			threeportApiAltNames := threeport.ThreeportApiAltNames(cpi.Opts.Namespace)
+			threeportApiAltNames = append(threeportApiAltNames, threeportAPIEndpoint)
+
+			Info("Generating server certificate and installing TLS assets")
+			if err := cpi.InstallThreeportAPITLS(
+				dynamicKubeClient,
+				mapper,
+				authConfig,
+				threeportApiAltNames...,
+			); err != nil {
+				return uninstaller.cleanOnCreateError("failed to install threeport API TLS assets", err)
+			}
+		}
+	}
+
 	// install the API
 	if err := cpi.UpdateThreeportAPIDeployment(
 		dynamicKubeClient,
@@ -483,7 +553,8 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 		return uninstaller.cleanOnCreateError("failed to install threeport API server", err)
 	}
 
-	// if the control plane is not kind, get the threeport API's public endpoint
+	// for non-kind providers, get the API endpoint from the load balancer
+	// and install TLS after since the endpoint isn't known until deployment
 	if controlPlane.InfraProvider != v0.KubernetesRuntimeInfraProviderKind {
 		threeportAPIEndpoint, err = cpi.GetThreeportAPIEndpoint(dynamicKubeClient, *mapper)
 		if err != nil {
@@ -494,53 +565,59 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 		}); err != nil {
 			return uninstaller.cleanOnCreateError("failed to update threeport config", err)
 		}
-	} else {
-		// update threeport config with api endpoint
-		var err error
-		threeportAPIEndpoint = threeport.GetLocalThreeportAPIEndpoint(cpi.Opts.AuthEnabled)
-		if threeportConfig, err = threeportControlPlaneConfig.UpdateThreeportConfigInstance(func(c *ControlPlane) {
-			c.APIServer = threeportAPIEndpoint
-		}); err != nil {
-			return fmt.Errorf("failed to update threeport config: %w", err)
+
+		// install provider-specific kubernetes resources
+		switch controlPlane.InfraProvider {
+		case v0.KubernetesRuntimeInfraProviderEKS:
+			if err := InstallEksKubernetesResources(
+				cpi,
+				uninstaller,
+				callerIdentity,
+				&dynamicKubeClient,
+				mapper,
+			); err != nil {
+				return uninstaller.cleanOnCreateError("failed to install eks kubernetes resources", err)
+			}
+		}
+
+		// install TLS assets after endpoint is known
+		if cpi.Opts.AuthEnabled {
+			threeportApiAltNames := threeport.ThreeportApiAltNames(cpi.Opts.Namespace)
+			threeportApiAltNames = append(threeportApiAltNames, threeportAPIEndpoint)
+
+			Info("Generating server certificate and installing TLS assets")
+			if err := cpi.InstallThreeportAPITLS(
+				dynamicKubeClient,
+				mapper,
+				authConfig,
+				threeportApiAltNames...,
+			); err != nil {
+				return uninstaller.cleanOnCreateError("failed to install threeport API TLS assets", err)
+			}
 		}
 	}
 
-	// install provider-specific kubernetes resources
-	switch controlPlane.InfraProvider {
-	case v0.KubernetesRuntimeInfraProviderEKS:
-		if err := InstallEksKubernetesResources(
-			cpi,
-			uninstaller,
-			callerIdentity,
-			&dynamicKubeClient,
-			mapper,
-		); err != nil {
-			return uninstaller.cleanOnCreateError("failed to install eks kubernetes resources", err)
-		}
+	if err := cpi.InstallThreeportControllers(
+		dynamicKubeClient,
+		mapper,
+		authConfig,
+	); err != nil {
+		return uninstaller.cleanOnCreateError("failed to install threeport controllers", err)
 	}
 
-	// if auth enabled install the threeport API TLS assets that include the alt
-	// name for the remote load balancer if applicable
-	if cpi.Opts.AuthEnabled {
-		// determine the threeport API alt names
-		threeportApiAltNames := threeport.ThreeportApiAltNames(cpi.Opts.Namespace)
-		threeportApiAltNames = append(threeportApiAltNames, threeportAPIEndpoint)
-
-		// install the threeport API TLS assets
-		if err := cpi.InstallThreeportAPITLS(
-			dynamicKubeClient,
-			mapper,
-			authConfig,
-			threeportApiAltNames...,
-		); err != nil {
-			return uninstaller.cleanOnCreateError("failed to install threeport API TLS assets", err)
-		}
+	if err = cpi.Opts.PostInstallFunction(kubernetesRuntimeInstance, cpi); err != nil {
+		return uninstaller.cleanOnCreateError("failed to run custom postInstall function", err)
 	}
 
-	// wait for API server to start running - it is not strictly necessary to
-	// wait for the API before installing the rest of the control plane, however
-	// it is helpful for dev environments and harmless otherwise since the
-	// controllers need the API to be running in order to start
+	if err := cpi.InstallThreeportAgent(
+		dynamicKubeClient,
+		mapper,
+		authConfig,
+	); err != nil {
+		return uninstaller.cleanOnCreateError("failed to install threeport agent", err)
+	}
+
+	// wait for API server to start running
 	Info(fmt.Sprintf("Waiting for threeport API to start running at %s", threeportAPIEndpoint))
 	attemptsMax := 60
 	waitDurationSeconds := 5
@@ -566,33 +643,8 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	}
 	Info("Threeport API is running")
 
-	// install the controllers
-	if err := cpi.InstallThreeportControllers(
-		dynamicKubeClient,
-		mapper,
-		authConfig,
-	); err != nil {
-		return uninstaller.cleanOnCreateError("failed to install threeport controllers", err)
-	}
-
-	err = cpi.Opts.PostInstallFunction(kubernetesRuntimeInstance, cpi)
-	if err != nil {
-		return uninstaller.cleanOnCreateError("failed to run custom postInstall function", err)
-	}
-
-	// install the agent
-	if err := cpi.InstallThreeportAgent(
-		dynamicKubeClient,
-		mapper,
-		cpi.Opts.ControlPlaneName,
-		authConfig,
-	); err != nil {
-		return uninstaller.cleanOnCreateError("failed to install threeport agent", err)
-	}
-
-	// install support services CRDs
-	err = threeport.InstallThreeportCRDs(dynamicKubeClient, mapper)
-	if err != nil {
+	// install support services CRDs separately (package-level function)
+	if err = threeport.InstallThreeportCRDs(dynamicKubeClient, mapper); err != nil {
 		return uninstaller.cleanOnCreateError("failed to install threeport support services CRDs", err)
 	}
 
@@ -666,13 +718,20 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	// before this step as kube.GetClient() may require a refresh of the connection
 	// token, which depends on those objects existing in the Threeport API
 	time.Sleep(time.Second * 10)
-	dynamicKubeClient, mapper, err = kube.GetClient(
-		kubernetesRuntimeInstResult,
-		false,
-		apiClient,
-		threeportAPIEndpoint,
-		encryptionKey,
-	)
+	if tokenGenerator != nil {
+		dynamicKubeClient, mapper, err = kube.GetClientWithTokenRefresh(
+			kubernetesRuntimeInstResult,
+			tokenGenerator,
+		)
+	} else {
+		dynamicKubeClient, mapper, err = kube.GetClient(
+			kubernetesRuntimeInstResult,
+			false,
+			apiClient,
+			threeportAPIEndpoint,
+			encryptionKey,
+		)
+	}
 	if err != nil {
 		return uninstaller.cleanOnCreateError("failed to refresh the Kubernetes client and mapper", err)
 	}
@@ -767,7 +826,7 @@ func CreateGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 // DeleteGenesisControlPlane deletes a threeport control plane.
 func DeleteGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller) error {
 	// get threeport config
-	threeportConfig, requestedControlPlane, err := GetThreeportConfig("")
+	threeportConfig, requestedControlPlane, err := GetThreeportConfig(customInstaller.Opts.ControlPlaneName)
 	if err != nil {
 		return fmt.Errorf("failed to get threeport config: %w", err)
 	}
@@ -821,6 +880,7 @@ func DeleteGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 	var awsConfigUser *aws.Config
 	var awsConfigResourceManager *aws.Config
 	var kubeConnection *kube.KubeConnectionInfo
+	infraAlreadyDestroyed := false
 
 	// perform provider-specific deletion prep
 	switch threeportControlPlaneConfig.Provider {
@@ -845,17 +905,38 @@ func DeleteGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 		kubernetesRuntimeInfra = kubernetesRuntimeInfraEKS
 	case v0.KubernetesRuntimeInfraProviderOKE:
 		kubernetesRuntimeInfraOKE := provider.KubernetesRuntimeInfraOKE{
-			RuntimeInstanceName: provider.ThreeportRuntimeName(cpi.Opts.ControlPlaneName),
+			PulumiWorkspace: provider.PulumiWorkspace{
+				RuntimeInstanceName: provider.ThreeportRuntimeName(cpi.Opts.ControlPlaneName),
+				ProjectName:         "oke",
+				ProjectDescription:  "Oracle Kubernetes Engine (OKE) cluster for Threeport",
+				// StackConfigs set by LoadOCIConfig after region is resolved
+			},
 		}
-		if kubeConnection, err = kubernetesRuntimeInfraOKE.GetConnection(); err != nil {
-			return fmt.Errorf("failed to get connection for OKE kubernetes runtime infra: %w", err)
+		if err := kubernetesRuntimeInfraOKE.LoadOCIConfig(
+			threeportControlPlaneConfig.OKEProviderConfig.OciRegion,
+			threeportControlPlaneConfig.OKEProviderConfig.OciConfigProfile,
+			threeportControlPlaneConfig.OKEProviderConfig.OciCompartmentOcid,
+		); err != nil {
+			return fmt.Errorf("failed to load OCI config: %w", err)
 		}
 		kubernetesRuntimeInfra = &kubernetesRuntimeInfraOKE
+
+		// check if infrastructure has already been destroyed (no local
+		// Pulumi state dir). This happens when a previous teardown
+		// destroyed infra but IAM cleanup failed.
+		infraAlreadyDestroyed = !kubernetesRuntimeInfraOKE.HasStateDir()
+		if infraAlreadyDestroyed {
+			Info("Infrastructure already destroyed, skipping to IAM cleanup")
+		}
 
 		// pull OKE stack state from OKE runtime instance
 		// if not infra-only, as this flag implies the user
 		// does not want to depend on control plane state
-		if !cpi.Opts.InfraOnly {
+		if !cpi.Opts.InfraOnly && !infraAlreadyDestroyed {
+			if kubeConnection, err = kubernetesRuntimeInfraOKE.GetConnection(); err != nil {
+				return fmt.Errorf("failed to get connection for OKE kubernetes runtime infra: %w", err)
+			}
+
 			// pull OKE stack state from OKE runtime instance
 			// and save to local pulumi state directory
 			okeRuntimeInstance, err := client.GetOciOkeKubernetesRuntimeInstanceByK8sRuntimeInst(
@@ -871,14 +952,24 @@ func DeleteGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 				)
 			}
 
+			// restore pulumi state from DB — this is the only source of
+			// state, so failure here means destroy would be a no-op and
+			// leave orphaned cloud resources
+			if okeRuntimeInstance.ResourceInventory == nil || len(*okeRuntimeInstance.ResourceInventory) == 0 {
+				return fmt.Errorf("no resource inventory found for OKE runtime instance %d, cannot destroy infrastructure", *okeRuntimeInstance.ID)
+			}
+			if !json.Valid(*okeRuntimeInstance.ResourceInventory) {
+				return fmt.Errorf("stored resource inventory for OKE runtime instance %d is corrupt, cannot destroy infrastructure", *okeRuntimeInstance.ID)
+			}
 			if err := kubernetesRuntimeInfraOKE.SetStackState(okeRuntimeInstance.ResourceInventory); err != nil {
-				return fmt.Errorf("failed to set OKE stack state: %w", err)
+				return fmt.Errorf("failed to restore state for OKE runtime instance %d: %w", *okeRuntimeInstance.ID, err)
 			}
 		}
 	}
 
 	// Only tear down control plane first if not infra-only
-	if !cpi.Opts.InfraOnly {
+	// and infrastructure hasn't already been destroyed
+	if !cpi.Opts.InfraOnly && !infraAlreadyDestroyed {
 
 		// check for workload instances on non-kind kubernetes runtimes - halt delete if
 		// any are present
@@ -951,6 +1042,13 @@ func DeleteGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 
 	if cpi.Opts.ControlPlaneOnly {
 		Info("Skipping infra teardown")
+	} else if infraAlreadyDestroyed {
+		// infrastructure already destroyed in a previous run — skip
+		// Pulumi destroy and go straight to IAM cleanup
+		Info("Skipping infra destroy (already completed)")
+		if err := kubernetesRuntimeInfra.(*provider.KubernetesRuntimeInfraOKE).DeleteOCIResources(); err != nil {
+			return fmt.Errorf("failed to delete OCI IAM resources: %w", err)
+		}
 	} else {
 
 		// delete control plane infra
@@ -973,12 +1071,26 @@ func DeleteGenesisControlPlane(customInstaller *threeport.ControlPlaneInstaller)
 			if err != nil {
 				return fmt.Errorf("failed to delete threeport AWS IAM resources: %w", err)
 			}
+		case v0.KubernetesRuntimeInfraProviderOKE:
+			// delete Pulumi stack state directory
+			if err := kubernetesRuntimeInfra.(*provider.KubernetesRuntimeInfraOKE).DeleteStackState(); err != nil {
+				Warning(fmt.Sprintf("failed to delete Pulumi stack state: %v", err))
+			}
+
+			// delete OCI user, groups, and compartment
+			if err := kubernetesRuntimeInfra.(*provider.KubernetesRuntimeInfraOKE).DeleteOCIResources(); err != nil {
+				return fmt.Errorf("failed to delete OCI IAM resources: %w", err)
+			}
 		}
 	}
 
-	// update threeport config to remove deleted threeport instance
-	DeleteThreeportConfigControlPlane(threeportConfig, cpi.Opts.ControlPlaneName)
-	Info("Threeport config updated")
+	// if control plane only flag is set, hold onto the control plane in the threeport
+	// config so we may tear-down with infra-only flag later
+	if !cpi.Opts.ControlPlaneOnly || cpi.Opts.InfraOnly {
+		// update threeport config to remove deleted threeport instance
+		DeleteThreeportConfigControlPlane(threeportConfig, cpi.Opts.ControlPlaneName)
+		Info("Threeport config updated")
+	}
 
 	Complete(fmt.Sprintf("Threeport control plane %s deleted", cpi.Opts.ControlPlaneName))
 
@@ -1047,13 +1159,12 @@ func (u *Uninstaller) cleanOnCreateError(
 ) error {
 
 	if createErrMsg != "" {
-		// print the error when it happens and then again post-deletion
 		Error(createErrMsg, createErr)
 		createErr = fmt.Errorf("%s: %w", createErrMsg, createErr)
 	}
 
-	// if skipTeardown is set, return error without tearing down infras
-	if *u.skipTeardown {
+	// if teardownOnFailure is not set, return error without tearing down infras
+	if !*u.teardownOnFailure {
 		return createErr
 	}
 
@@ -1105,6 +1216,16 @@ func (u *Uninstaller) cleanOnCreateError(
 		if err := os.Remove(invFile); err != nil {
 			Warning(fmt.Sprintf("failed to remove inventory file %s", invFile))
 		}
+	case v0.KubernetesRuntimeInfraProviderOKE:
+		Info("Deleting Threeport OCI IAM resources")
+		kubernetesRuntimeInfraOKE := u.kubernetesRuntimeInfra.(*provider.KubernetesRuntimeInfraOKE)
+		if err := kubernetesRuntimeInfraOKE.DeleteOCIResources(); err != nil {
+			Warning(fmt.Sprintf("failed to delete OCI IAM resources: %v", err))
+		}
+		if err := kubernetesRuntimeInfraOKE.DeleteStackState(); err != nil {
+			Warning(fmt.Sprintf("failed to delete Pulumi stack state: %v", err))
+		}
+		Info("Threeport OCI IAM resources deleted")
 	}
 
 	// remove control plane from Threeport config

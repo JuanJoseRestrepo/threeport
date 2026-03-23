@@ -16,6 +16,7 @@ import (
 var (
 	kubernetesRuntimeName       string
 	kubernetesRuntimeConfigPath string
+	kubernetesRuntimeStdin      bool
 	kubernetesRuntimeVersion    string
 	kubernetesRuntimeOutput     string
 )
@@ -49,9 +50,9 @@ var GetKubernetesRuntimesCmd = &cobra.Command{
 			// load kubernetes runtime values
 			kubernetesRuntimeConfig := config_v0.KubernetesRuntimeConfig{}
 			if kubernetesRuntimeConfigPath != "" {
-				configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+				configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeConfig); err != nil {
@@ -147,9 +148,9 @@ var CreateKubernetesRuntimeCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read kubernetes runtime config
-		configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+		configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -198,7 +199,10 @@ func init() {
 		&kubernetesRuntimeConfigPath,
 		"config", "c", "", "Path to file with kubernetes runtime config.",
 	)
-	CreateKubernetesRuntimeCmd.MarkFlagRequired("config")
+	CreateKubernetesRuntimeCmd.Flags().BoolVar(
+		&kubernetesRuntimeStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateKubernetesRuntimeCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -223,9 +227,9 @@ var DeleteKubernetesRuntimeCmd = &cobra.Command{
 		}
 
 		// read kubernetes runtime config
-		configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+		configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -303,9 +307,9 @@ var GetKubernetesRuntimeDefinitionsCmd = &cobra.Command{
 			// load values
 			kubernetesRuntimeDefinitionConfig := config_v0.KubernetesRuntimeDefinitionConfig{}
 			if kubernetesRuntimeConfigPath != "" {
-				configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+				configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeDefinitionConfig); err != nil {
@@ -401,9 +405,9 @@ var CreateKubernetesRuntimeDefinitionCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read kubernetes runtime definition config
-		configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+		configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create kubernetes runtime definition based on version
@@ -440,7 +444,10 @@ func init() {
 		&kubernetesRuntimeConfigPath,
 		"config", "c", "", "Path to file with kubernetes runtime definition config.",
 	)
-	CreateKubernetesRuntimeDefinitionCmd.MarkFlagRequired("config")
+	CreateKubernetesRuntimeDefinitionCmd.Flags().BoolVar(
+		&kubernetesRuntimeStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateKubernetesRuntimeDefinitionCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -464,9 +471,9 @@ var ReplaceKubernetesRuntimeDefinitionCmd = &cobra.Command{
 		case "v0":
 			var kubernetesRuntimeDefinitionConfig config_v0.KubernetesRuntimeDefinitionConfig
 			// load kubernetes runtime definition config
-			configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+			configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeDefinitionConfig); err != nil {
@@ -499,7 +506,10 @@ func init() {
 		&kubernetesRuntimeConfigPath,
 		"config", "c", "", "Path to file with kubernetes runtime definition config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceKubernetesRuntimeDefinitionCmd.MarkFlagRequired("config")
+	ReplaceKubernetesRuntimeDefinitionCmd.Flags().BoolVar(
+		&kubernetesRuntimeStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceKubernetesRuntimeDefinitionCmd.Flags().StringVarP(
 		&kubernetesRuntimeName,
 		"name", "n", "", "Name of existing kubernetes runtime definition to replace.  If the name in the kubernetes runtime definition config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -539,9 +549,9 @@ var DeleteKubernetesRuntimeDefinitionCmd = &cobra.Command{
 			var kubernetesRuntimeDefinitionConfig config_v0.KubernetesRuntimeDefinitionConfig
 			if kubernetesRuntimeConfigPath != "" {
 				// load kubernetes runtime definition config
-				configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+				configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeDefinitionConfig); err != nil {
@@ -623,9 +633,9 @@ var GetKubernetesRuntimeInstancesCmd = &cobra.Command{
 			// load values
 			kubernetesRuntimeInstanceConfig := config_v0.KubernetesRuntimeInstanceConfig{}
 			if kubernetesRuntimeConfigPath != "" {
-				configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+				configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeInstanceConfig); err != nil {
@@ -721,9 +731,9 @@ var CreateKubernetesRuntimeInstanceCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read kubernetes runtime instance config
-		configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+		configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create kubernetes runtime instance based on version
@@ -760,7 +770,10 @@ func init() {
 		&kubernetesRuntimeConfigPath,
 		"config", "c", "", "Path to file with kubernetes runtime instance config.",
 	)
-	CreateKubernetesRuntimeInstanceCmd.MarkFlagRequired("config")
+	CreateKubernetesRuntimeInstanceCmd.Flags().BoolVar(
+		&kubernetesRuntimeStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateKubernetesRuntimeInstanceCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -784,9 +797,9 @@ var ReplaceKubernetesRuntimeInstanceCmd = &cobra.Command{
 		case "v0":
 			var kubernetesRuntimeInstanceConfig config_v0.KubernetesRuntimeInstanceConfig
 			// load kubernetes runtime instance config
-			configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+			configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeInstanceConfig); err != nil {
@@ -819,7 +832,10 @@ func init() {
 		&kubernetesRuntimeConfigPath,
 		"config", "c", "", "Path to file with kubernetes runtime instance config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceKubernetesRuntimeInstanceCmd.MarkFlagRequired("config")
+	ReplaceKubernetesRuntimeInstanceCmd.Flags().BoolVar(
+		&kubernetesRuntimeStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceKubernetesRuntimeInstanceCmd.Flags().StringVarP(
 		&kubernetesRuntimeName,
 		"name", "n", "", "Name of existing kubernetes runtime instance to replace.  If the name in the kubernetes runtime instance config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -859,9 +875,9 @@ var DeleteKubernetesRuntimeInstanceCmd = &cobra.Command{
 			var kubernetesRuntimeInstanceConfig config_v0.KubernetesRuntimeInstanceConfig
 			if kubernetesRuntimeConfigPath != "" {
 				// load kubernetes runtime instance config
-				configContent, err := os.ReadFile(kubernetesRuntimeConfigPath)
+				configContent, err := cli.ReadConfigContent(kubernetesRuntimeConfigPath, kubernetesRuntimeStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &kubernetesRuntimeInstanceConfig); err != nil {

@@ -16,6 +16,7 @@ import (
 var (
 	gatewayName       string
 	gatewayConfigPath string
+	gatewayStdin      bool
 	gatewayVersion    string
 	gatewayOutput     string
 )
@@ -49,9 +50,9 @@ var GetDomainNamesCmd = &cobra.Command{
 			// load domain name values
 			domainNameConfig := config_v0.DomainNameConfig{}
 			if gatewayConfigPath != "" {
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &domainNameConfig); err != nil {
@@ -147,9 +148,9 @@ var CreateDomainNameCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read domain name config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -198,7 +199,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with domain name config.",
 	)
-	CreateDomainNameCmd.MarkFlagRequired("config")
+	CreateDomainNameCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateDomainNameCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -223,9 +227,9 @@ var DeleteDomainNameCmd = &cobra.Command{
 		}
 
 		// read domain name config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -303,9 +307,9 @@ var GetDomainNameDefinitionsCmd = &cobra.Command{
 			// load values
 			domainNameDefinitionConfig := config_v0.DomainNameDefinitionConfig{}
 			if gatewayConfigPath != "" {
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &domainNameDefinitionConfig); err != nil {
@@ -401,9 +405,9 @@ var CreateDomainNameDefinitionCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read domain name definition config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create domain name definition based on version
@@ -440,7 +444,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with domain name definition config.",
 	)
-	CreateDomainNameDefinitionCmd.MarkFlagRequired("config")
+	CreateDomainNameDefinitionCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateDomainNameDefinitionCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -464,9 +471,9 @@ var ReplaceDomainNameDefinitionCmd = &cobra.Command{
 		case "v0":
 			var domainNameDefinitionConfig config_v0.DomainNameDefinitionConfig
 			// load domain name definition config
-			configContent, err := os.ReadFile(gatewayConfigPath)
+			configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &domainNameDefinitionConfig); err != nil {
@@ -499,7 +506,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with domain name definition config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceDomainNameDefinitionCmd.MarkFlagRequired("config")
+	ReplaceDomainNameDefinitionCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceDomainNameDefinitionCmd.Flags().StringVarP(
 		&gatewayName,
 		"name", "n", "", "Name of existing domain name definition to replace.  If the name in the domain name definition config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -539,9 +549,9 @@ var DeleteDomainNameDefinitionCmd = &cobra.Command{
 			var domainNameDefinitionConfig config_v0.DomainNameDefinitionConfig
 			if gatewayConfigPath != "" {
 				// load domain name definition config
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &domainNameDefinitionConfig); err != nil {
@@ -623,9 +633,9 @@ var GetDomainNameInstancesCmd = &cobra.Command{
 			// load values
 			domainNameInstanceConfig := config_v0.DomainNameInstanceConfig{}
 			if gatewayConfigPath != "" {
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &domainNameInstanceConfig); err != nil {
@@ -721,9 +731,9 @@ var CreateDomainNameInstanceCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read domain name instance config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create domain name instance based on version
@@ -760,7 +770,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with domain name instance config.",
 	)
-	CreateDomainNameInstanceCmd.MarkFlagRequired("config")
+	CreateDomainNameInstanceCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateDomainNameInstanceCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -784,9 +797,9 @@ var ReplaceDomainNameInstanceCmd = &cobra.Command{
 		case "v0":
 			var domainNameInstanceConfig config_v0.DomainNameInstanceConfig
 			// load domain name instance config
-			configContent, err := os.ReadFile(gatewayConfigPath)
+			configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &domainNameInstanceConfig); err != nil {
@@ -819,7 +832,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with domain name instance config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceDomainNameInstanceCmd.MarkFlagRequired("config")
+	ReplaceDomainNameInstanceCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceDomainNameInstanceCmd.Flags().StringVarP(
 		&gatewayName,
 		"name", "n", "", "Name of existing domain name instance to replace.  If the name in the domain name instance config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -859,9 +875,9 @@ var DeleteDomainNameInstanceCmd = &cobra.Command{
 			var domainNameInstanceConfig config_v0.DomainNameInstanceConfig
 			if gatewayConfigPath != "" {
 				// load domain name instance config
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &domainNameInstanceConfig); err != nil {
@@ -944,9 +960,9 @@ var GetGatewaysCmd = &cobra.Command{
 			// load gateway values
 			gatewayConfig := config_v0.GatewayConfig{}
 			if gatewayConfigPath != "" {
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &gatewayConfig); err != nil {
@@ -1042,9 +1058,9 @@ var CreateGatewayCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read gateway config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -1093,7 +1109,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with gateway config.",
 	)
-	CreateGatewayCmd.MarkFlagRequired("config")
+	CreateGatewayCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateGatewayCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -1118,9 +1137,9 @@ var DeleteGatewayCmd = &cobra.Command{
 		}
 
 		// read gateway config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -1198,9 +1217,9 @@ var GetGatewayDefinitionsCmd = &cobra.Command{
 			// load values
 			gatewayDefinitionConfig := config_v0.GatewayDefinitionConfig{}
 			if gatewayConfigPath != "" {
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &gatewayDefinitionConfig); err != nil {
@@ -1296,9 +1315,9 @@ var CreateGatewayDefinitionCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read gateway definition config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create gateway definition based on version
@@ -1335,7 +1354,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with gateway definition config.",
 	)
-	CreateGatewayDefinitionCmd.MarkFlagRequired("config")
+	CreateGatewayDefinitionCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateGatewayDefinitionCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -1359,9 +1381,9 @@ var ReplaceGatewayDefinitionCmd = &cobra.Command{
 		case "v0":
 			var gatewayDefinitionConfig config_v0.GatewayDefinitionConfig
 			// load gateway definition config
-			configContent, err := os.ReadFile(gatewayConfigPath)
+			configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &gatewayDefinitionConfig); err != nil {
@@ -1394,7 +1416,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with gateway definition config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceGatewayDefinitionCmd.MarkFlagRequired("config")
+	ReplaceGatewayDefinitionCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceGatewayDefinitionCmd.Flags().StringVarP(
 		&gatewayName,
 		"name", "n", "", "Name of existing gateway definition to replace.  If the name in the gateway definition config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -1434,9 +1459,9 @@ var DeleteGatewayDefinitionCmd = &cobra.Command{
 			var gatewayDefinitionConfig config_v0.GatewayDefinitionConfig
 			if gatewayConfigPath != "" {
 				// load gateway definition config
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &gatewayDefinitionConfig); err != nil {
@@ -1518,9 +1543,9 @@ var GetGatewayInstancesCmd = &cobra.Command{
 			// load values
 			gatewayInstanceConfig := config_v0.GatewayInstanceConfig{}
 			if gatewayConfigPath != "" {
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &gatewayInstanceConfig); err != nil {
@@ -1616,9 +1641,9 @@ var CreateGatewayInstanceCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read gateway instance config
-		configContent, err := os.ReadFile(gatewayConfigPath)
+		configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create gateway instance based on version
@@ -1655,7 +1680,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with gateway instance config.",
 	)
-	CreateGatewayInstanceCmd.MarkFlagRequired("config")
+	CreateGatewayInstanceCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateGatewayInstanceCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -1679,9 +1707,9 @@ var ReplaceGatewayInstanceCmd = &cobra.Command{
 		case "v0":
 			var gatewayInstanceConfig config_v0.GatewayInstanceConfig
 			// load gateway instance config
-			configContent, err := os.ReadFile(gatewayConfigPath)
+			configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &gatewayInstanceConfig); err != nil {
@@ -1714,7 +1742,10 @@ func init() {
 		&gatewayConfigPath,
 		"config", "c", "", "Path to file with gateway instance config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceGatewayInstanceCmd.MarkFlagRequired("config")
+	ReplaceGatewayInstanceCmd.Flags().BoolVar(
+		&gatewayStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceGatewayInstanceCmd.Flags().StringVarP(
 		&gatewayName,
 		"name", "n", "", "Name of existing gateway instance to replace.  If the name in the gateway instance config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -1754,9 +1785,9 @@ var DeleteGatewayInstanceCmd = &cobra.Command{
 			var gatewayInstanceConfig config_v0.GatewayInstanceConfig
 			if gatewayConfigPath != "" {
 				// load gateway instance config
-				configContent, err := os.ReadFile(gatewayConfigPath)
+				configContent, err := cli.ReadConfigContent(gatewayConfigPath, gatewayStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &gatewayInstanceConfig); err != nil {

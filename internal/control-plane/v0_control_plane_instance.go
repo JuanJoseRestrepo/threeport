@@ -15,7 +15,10 @@ import (
 	"github.com/go-logr/logr"
 	builder_config "github.com/nukleros/aws-builder/pkg/config"
 	"github.com/nukleros/aws-builder/pkg/iam"
+	"github.com/oracle/oci-go-sdk/v65/common"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/dynamic"
 
 	"github.com/threeport/threeport/internal/provider"
 	v0 "github.com/threeport/threeport/pkg/api/v0"
@@ -103,28 +106,21 @@ func v0ControlPlaneInstanceCreated(
 		return 0, fmt.Errorf("failed to get control plane kubernetesRuntime definition by ID: %w", err)
 	}
 
-	// create a dynamic client to connect to kube API
-	dynamicKubeClient, mapper, err := kube.GetClient(
-		kubernetesRuntimeInstance,
-		true,
-		r.APIClient,
-		r.APIServer,
-		r.EncryptionKey,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create dynamic kube API client: %w", err)
-	}
-
 	selfInstance, err := client.GetSelfControlPlaneInstance(r.APIClient, r.APIServer)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get self control plane instance: %w", err)
 	}
 
+	// determine if child deploys to a different cluster than genesis —
+	// cross-cluster needs a load balancer, same-cluster uses ClusterIP
+	sameCluster := *selfInstance.KubernetesRuntimeInstanceID == *controlPlaneInstance.KubernetesRuntimeInstanceID
+
 	// Configure installer for new control plane instance
 	cpi := threeport.NewInstaller(threeport.Namespace(*controlPlaneInstance.Namespace))
 	cpi.Opts.ControlPlaneName = *controlPlaneInstance.Name
 	cpi.Opts.InThreeport = true
-	cpi.Opts.RestApiEksLoadBalancer = false
+	// enable load balancer for cross-cluster cloud provider deployments
+	cpi.Opts.RestApiLoadBalancer = !sameCluster && *kubernetesRuntimeDefinition.InfraProvider != v0.KubernetesRuntimeInfraProviderKind
 	// If this is not the first run of the creation reconciler, we want to use createOrUpdate mode
 	cpi.Opts.CreateOrUpdateKubeResources = notFirstRun
 
@@ -177,6 +173,7 @@ func v0ControlPlaneInstanceCreated(
 
 	// perform provider specific configuration
 	var callerIdentity *sts.GetCallerIdentityOutput
+	var tokenGenerator func() (string, error)
 	switch *kubernetesRuntimeDefinition.InfraProvider {
 	case v0.KubernetesRuntimeInfraProviderEKS:
 		resourceInventory, err := client.GetResourceInventoryByK8sRuntimeInst(
@@ -289,6 +286,70 @@ func v0ControlPlaneInstanceCreated(
 			return 0, fmt.Errorf("failed to update resource manager role: %w", err)
 		}
 
+	case v0.KubernetesRuntimeInfraProviderOKE:
+		// build OCI config provider for token refresh — OKE tokens are
+		// short-lived and the bootstrap process can outlast them
+		ociRuntimeInstance, err := client.GetOciOkeKubernetesRuntimeInstanceByK8sRuntimeInst(
+			r.APIClient, r.APIServer, *kubernetesRuntimeInstance.ID,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OCI OKE runtime instance: %w", err)
+		}
+
+		ociProvider, err := client.GetOciProviderByID(
+			r.APIClient, r.APIServer, *ociRuntimeInstance.OciProviderID,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OCI provider: %w", err)
+		}
+
+		decryptedPrivateKey, err := encryption.Decrypt(r.EncryptionKey, *ociProvider.PrivateKey)
+		if err != nil {
+			return 0, fmt.Errorf("failed to decrypt OCI provider private key: %w", err)
+		}
+
+		configProvider := common.NewRawConfigurationProvider(
+			*ociProvider.TenancyOCID,
+			*ociProvider.UserOCID,
+			*ociProvider.DefaultRegion,
+			*ociProvider.KeyFingerprint,
+			decryptedPrivateKey,
+			nil,
+		)
+
+		// use the cluster OCID already stored on the OKE runtime instance
+		// for token generation — avoids compartment/region lookup issues
+		if ociRuntimeInstance.ClusterOCID == nil || *ociRuntimeInstance.ClusterOCID == "" {
+			return 0, fmt.Errorf("OCI OKE runtime instance %s has no cluster OCID set", *ociRuntimeInstance.Name)
+		}
+		clusterOCID := *ociRuntimeInstance.ClusterOCID
+
+		tokenGenerator = func() (string, error) {
+			t, _, err := util.GenerateOkeToken(clusterOCID, configProvider)
+			return t, err
+		}
+	}
+
+	// create a dynamic client to connect to kube API — use token refresh
+	// for OKE to prevent expiration during the lengthy bootstrap process
+	var dynamicKubeClient dynamic.Interface
+	var mapper *meta.RESTMapper
+	if tokenGenerator != nil {
+		dynamicKubeClient, mapper, err = kube.GetClientWithTokenRefresh(
+			kubernetesRuntimeInstance,
+			tokenGenerator,
+		)
+	} else {
+		dynamicKubeClient, mapper, err = kube.GetClient(
+			kubernetesRuntimeInstance,
+			true,
+			r.APIClient,
+			r.APIServer,
+			r.EncryptionKey,
+		)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to create dynamic kube API client: %w", err)
 	}
 
 	// Determine auth enabled and create config if needed
@@ -355,7 +416,6 @@ func v0ControlPlaneInstanceCreated(
 	if err := cpi.InstallThreeportControlPlaneDependencies(
 		dynamicKubeClient,
 		mapper,
-		*kubernetesRuntimeDefinition.InfraProvider,
 		encryptionKey,
 		dbCreds,
 	); err != nil {
@@ -371,11 +431,20 @@ func v0ControlPlaneInstanceCreated(
 		return 0, fmt.Errorf("failed to install threeport API server: %w", err)
 	}
 
-	// for a cloud provider installed control plane:
-	// * determine the threeport API's remote endpoint to add to the threeport
-	//   config and to add to the server certificate's alt names when TLS
-	//   assets are installed
-	// * install provider-specific kubernetes resources
+	// for cloud providers, get the load balancer endpoint so the genesis
+	// reconciler can reach the child API across clusters
+	var lbEndpoint string
+	if *kubernetesRuntimeDefinition.InfraProvider != v0.KubernetesRuntimeInfraProviderKind {
+		lbEndpoint, err = cpi.GetThreeportAPIEndpoint(dynamicKubeClient, *mapper)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get threeport API load balancer endpoint: %w", err)
+		}
+		_, port := cpi.GetAPIServicePort()
+		threeportAPIEndpoint = fmt.Sprintf("%s:%d", lbEndpoint, port)
+		controlPlaneInstance.ApiServerEndpoint = &threeportAPIEndpoint
+	}
+
+	// install provider-specific kubernetes resources
 	switch *kubernetesRuntimeDefinition.InfraProvider {
 	case v0.KubernetesRuntimeInfraProviderEKS:
 		// create and configure service accounts for workload and aws controllers,
@@ -402,6 +471,11 @@ func v0ControlPlaneInstanceCreated(
 		// determine the threeport API alt names
 		threeportApiAltNames := threeport.ThreeportApiAltNames(cpi.Opts.Namespace)
 		threeportApiAltNames = append(threeportApiAltNames, threeportAPIEndpoint)
+		// add the raw LB endpoint (IP or hostname without port) so
+		// net.ParseIP can add it as an IP SAN in the certificate
+		if lbEndpoint != "" {
+			threeportApiAltNames = append(threeportApiAltNames, lbEndpoint)
+		}
 
 		// install the threeport API TLS assets
 		if err := cpi.InstallThreeportAPITLS(
@@ -423,6 +497,15 @@ func v0ControlPlaneInstanceCreated(
 		return 0, fmt.Errorf("failed to install threeport controllers: %w", err)
 	}
 
+	// install the agent
+	if err := cpi.InstallThreeportAgent(
+		dynamicKubeClient,
+		mapper,
+		authConfig,
+	); err != nil {
+		return 0, fmt.Errorf("failed to install threeport agent: %w", err)
+	}
+
 	// install support services CRDs
 	err = threeport.InstallThreeportCRDs(dynamicKubeClient, mapper)
 	if err != nil {
@@ -433,13 +516,20 @@ func v0ControlPlaneInstanceCreated(
 	// this is necessary to have the updated REST mapping for the CRDs as the
 	// support services operator install includes one of those custom resources
 	time.Sleep(time.Second * 10)
-	dynamicKubeClient, mapper, err = kube.GetClient(
-		kubernetesRuntimeInstance,
-		true,
-		r.APIClient,
-		r.APIServer,
-		r.EncryptionKey,
-	)
+	if tokenGenerator != nil {
+		dynamicKubeClient, mapper, err = kube.GetClientWithTokenRefresh(
+			kubernetesRuntimeInstance,
+			tokenGenerator,
+		)
+	} else {
+		dynamicKubeClient, mapper, err = kube.GetClient(
+			kubernetesRuntimeInstance,
+			true,
+			r.APIClient,
+			r.APIServer,
+			r.EncryptionKey,
+		)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to refresh dynamic kube API client: %w", err)
 	}
@@ -584,6 +674,59 @@ func v0ControlPlaneInstanceCreated(
 			return 0, fmt.Errorf("failed to create AwsEksKubernetesRuntimeInstance: %w", err)
 		}
 
+	case v0.KubernetesRuntimeInfraProviderOKE:
+		// get OCI OKE runtime definition and instance
+		ociRuntimeDef, err := client.GetOciOkeKubernetesRuntimeDefinitionByK8sRuntimeDef(
+			r.APIClient, r.APIServer, *kubernetesRuntimeDefinition.ID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OciOkeKubernetesRuntimeDefinition: %w", err)
+		}
+
+		ociRuntimeInstance, err := client.GetOciOkeKubernetesRuntimeInstanceByK8sRuntimeInst(
+			r.APIClient, r.APIServer, *kubernetesRuntimeInstance.ID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OciOkeKubernetesRuntimeInstance: %w", err)
+		}
+
+		ociProvider, err := client.GetOciProviderByID(
+			r.APIClient, r.APIServer, *ociRuntimeInstance.OciProviderID)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OciProvider: %w", err)
+		}
+
+		// decrypt private key
+		ociProvider.Common = v0.Common{}
+		if ociProvider.PrivateKey != nil && *ociProvider.PrivateKey != "" {
+			decryptedKey, err := encryption.Decrypt(r.EncryptionKey, *ociProvider.PrivateKey)
+			if err != nil {
+				return 0, fmt.Errorf("failed to decrypt OCI provider private key: %w", err)
+			}
+			ociProvider.PrivateKey = &decryptedKey
+		}
+
+		// create OCI provider in child control plane
+		createdOciProvider, err := client.CreateOciProvider(newApiClient, threeportAPIEndpoint, ociProvider)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create OciProvider: %w", err)
+		}
+
+		// create OCI runtime definition in child control plane
+		ociRuntimeDef.Common = v0.Common{}
+		createdOciRuntimeDef, err := client.CreateOciOkeKubernetesRuntimeDefinition(
+			newApiClient, threeportAPIEndpoint, ociRuntimeDef)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create OciOkeKubernetesRuntimeDefinition: %w", err)
+		}
+
+		// create OCI runtime instance in child control plane
+		ociRuntimeInstance.Common = v0.Common{}
+		ociRuntimeInstance.OciProviderID = createdOciProvider.ID
+		ociRuntimeInstance.OciOkeKubernetesRuntimeDefinitionID = createdOciRuntimeDef.ID
+		_, err = client.CreateOciOkeKubernetesRuntimeInstance(
+			newApiClient, threeportAPIEndpoint, ociRuntimeInstance)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create OciOkeKubernetesRuntimeInstance: %w", err)
+		}
 	}
 
 	// onboard control plane definition and instance to new control plane
@@ -728,14 +871,56 @@ func v0ControlPlaneInstanceDeleted(
 		return 0, fmt.Errorf("failed to get control plane kubernetesRuntime definition by ID: %w", err)
 	}
 
-	// create a dynamic client to connect to kube API
-	dynamicKubeClient, mapper, err := kube.GetClient(
-		kubernetesRuntimeInstance,
-		true,
-		r.APIClient,
-		r.APIServer,
-		r.EncryptionKey,
-	)
+	// create a dynamic client to connect to kube API — use token refresh
+	// for OKE to handle short-lived tokens
+	var deleteDynamicClient dynamic.Interface
+	var deleteMapper *meta.RESTMapper
+	switch *kubernetesRuntimeDefinition.InfraProvider {
+	case v0.KubernetesRuntimeInfraProviderOKE:
+		ociRuntimeInstance, err := client.GetOciOkeKubernetesRuntimeInstanceByK8sRuntimeInst(
+			r.APIClient, r.APIServer, *kubernetesRuntimeInstance.ID,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OCI OKE runtime instance for delete: %w", err)
+		}
+		ociProvider, err := client.GetOciProviderByID(
+			r.APIClient, r.APIServer, *ociRuntimeInstance.OciProviderID,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get OCI provider for delete: %w", err)
+		}
+		decryptedPrivateKey, err := encryption.Decrypt(r.EncryptionKey, *ociProvider.PrivateKey)
+		if err != nil {
+			return 0, fmt.Errorf("failed to decrypt OCI provider private key for delete: %w", err)
+		}
+		configProvider := common.NewRawConfigurationProvider(
+			*ociProvider.TenancyOCID,
+			*ociProvider.UserOCID,
+			*ociProvider.DefaultRegion,
+			*ociProvider.KeyFingerprint,
+			decryptedPrivateKey,
+			nil,
+		)
+		if ociRuntimeInstance.ClusterOCID == nil || *ociRuntimeInstance.ClusterOCID == "" {
+			return 0, fmt.Errorf("OCI OKE runtime instance has no cluster OCID set for delete")
+		}
+		clusterOCID := *ociRuntimeInstance.ClusterOCID
+		deleteDynamicClient, deleteMapper, err = kube.GetClientWithTokenRefresh(
+			kubernetesRuntimeInstance,
+			func() (string, error) {
+				t, _, err := util.GenerateOkeToken(clusterOCID, configProvider)
+				return t, err
+			},
+		)
+	default:
+		deleteDynamicClient, deleteMapper, err = kube.GetClient(
+			kubernetesRuntimeInstance,
+			true,
+			r.APIClient,
+			r.APIServer,
+			r.EncryptionKey,
+		)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to create dynamic kube API client: %w", err)
 	}
@@ -751,7 +936,7 @@ func v0ControlPlaneInstanceDeleted(
 	}
 
 	// delete the namespace
-	if err := kube.DeleteResource(namespace, dynamicKubeClient, *mapper); err != nil {
+	if err := kube.DeleteResource(namespace, deleteDynamicClient, *deleteMapper); err != nil {
 		return 0, fmt.Errorf("failed to delete the control plane namespace: %w", err)
 	}
 
@@ -775,6 +960,9 @@ func v0ControlPlaneInstanceDeleted(
 		if err != nil {
 			return 0, fmt.Errorf("failed to delete threeport AWS IAM resources: %w", err)
 		}
+	case v0.KubernetesRuntimeInfraProviderOKE:
+		// OCI OKE does not create provider-specific IAM resources during control plane creation,
+		// so no cleanup is needed during deletion.
 	}
 
 	return 0, nil

@@ -16,6 +16,7 @@ import (
 var (
 	controlPlaneName       string
 	controlPlaneConfigPath string
+	controlPlaneStdin      bool
 	controlPlaneVersion    string
 	controlPlaneOutput     string
 )
@@ -49,9 +50,9 @@ var GetControlPlanesCmd = &cobra.Command{
 			// load control plane values
 			controlPlaneConfig := config_v0.ControlPlaneConfig{}
 			if controlPlaneConfigPath != "" {
-				configContent, err := os.ReadFile(controlPlaneConfigPath)
+				configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &controlPlaneConfig); err != nil {
@@ -147,9 +148,9 @@ var CreateControlPlaneCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read control plane config
-		configContent, err := os.ReadFile(controlPlaneConfigPath)
+		configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -198,7 +199,10 @@ func init() {
 		&controlPlaneConfigPath,
 		"config", "c", "", "Path to file with control plane config.",
 	)
-	CreateControlPlaneCmd.MarkFlagRequired("config")
+	CreateControlPlaneCmd.Flags().BoolVar(
+		&controlPlaneStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateControlPlaneCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -223,9 +227,9 @@ var DeleteControlPlaneCmd = &cobra.Command{
 		}
 
 		// read control plane config
-		configContent, err := os.ReadFile(controlPlaneConfigPath)
+		configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -303,9 +307,9 @@ var GetControlPlaneDefinitionsCmd = &cobra.Command{
 			// load values
 			controlPlaneDefinitionConfig := config_v0.ControlPlaneDefinitionConfig{}
 			if controlPlaneConfigPath != "" {
-				configContent, err := os.ReadFile(controlPlaneConfigPath)
+				configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &controlPlaneDefinitionConfig); err != nil {
@@ -401,9 +405,9 @@ var CreateControlPlaneDefinitionCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read control plane definition config
-		configContent, err := os.ReadFile(controlPlaneConfigPath)
+		configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create control plane definition based on version
@@ -440,7 +444,10 @@ func init() {
 		&controlPlaneConfigPath,
 		"config", "c", "", "Path to file with control plane definition config.",
 	)
-	CreateControlPlaneDefinitionCmd.MarkFlagRequired("config")
+	CreateControlPlaneDefinitionCmd.Flags().BoolVar(
+		&controlPlaneStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateControlPlaneDefinitionCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -464,9 +471,9 @@ var ReplaceControlPlaneDefinitionCmd = &cobra.Command{
 		case "v0":
 			var controlPlaneDefinitionConfig config_v0.ControlPlaneDefinitionConfig
 			// load control plane definition config
-			configContent, err := os.ReadFile(controlPlaneConfigPath)
+			configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &controlPlaneDefinitionConfig); err != nil {
@@ -499,7 +506,10 @@ func init() {
 		&controlPlaneConfigPath,
 		"config", "c", "", "Path to file with control plane definition config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceControlPlaneDefinitionCmd.MarkFlagRequired("config")
+	ReplaceControlPlaneDefinitionCmd.Flags().BoolVar(
+		&controlPlaneStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceControlPlaneDefinitionCmd.Flags().StringVarP(
 		&controlPlaneName,
 		"name", "n", "", "Name of existing control plane definition to replace.  If the name in the control plane definition config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -539,9 +549,9 @@ var DeleteControlPlaneDefinitionCmd = &cobra.Command{
 			var controlPlaneDefinitionConfig config_v0.ControlPlaneDefinitionConfig
 			if controlPlaneConfigPath != "" {
 				// load control plane definition config
-				configContent, err := os.ReadFile(controlPlaneConfigPath)
+				configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &controlPlaneDefinitionConfig); err != nil {
@@ -623,9 +633,9 @@ var GetControlPlaneInstancesCmd = &cobra.Command{
 			// load values
 			controlPlaneInstanceConfig := config_v0.ControlPlaneInstanceConfig{}
 			if controlPlaneConfigPath != "" {
-				configContent, err := os.ReadFile(controlPlaneConfigPath)
+				configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &controlPlaneInstanceConfig); err != nil {
@@ -721,9 +731,9 @@ var CreateControlPlaneInstanceCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read control plane instance config
-		configContent, err := os.ReadFile(controlPlaneConfigPath)
+		configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create control plane instance based on version
@@ -760,7 +770,10 @@ func init() {
 		&controlPlaneConfigPath,
 		"config", "c", "", "Path to file with control plane instance config.",
 	)
-	CreateControlPlaneInstanceCmd.MarkFlagRequired("config")
+	CreateControlPlaneInstanceCmd.Flags().BoolVar(
+		&controlPlaneStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateControlPlaneInstanceCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -784,9 +797,9 @@ var ReplaceControlPlaneInstanceCmd = &cobra.Command{
 		case "v0":
 			var controlPlaneInstanceConfig config_v0.ControlPlaneInstanceConfig
 			// load control plane instance config
-			configContent, err := os.ReadFile(controlPlaneConfigPath)
+			configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &controlPlaneInstanceConfig); err != nil {
@@ -819,7 +832,10 @@ func init() {
 		&controlPlaneConfigPath,
 		"config", "c", "", "Path to file with control plane instance config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceControlPlaneInstanceCmd.MarkFlagRequired("config")
+	ReplaceControlPlaneInstanceCmd.Flags().BoolVar(
+		&controlPlaneStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceControlPlaneInstanceCmd.Flags().StringVarP(
 		&controlPlaneName,
 		"name", "n", "", "Name of existing control plane instance to replace.  If the name in the control plane instance config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -859,9 +875,9 @@ var DeleteControlPlaneInstanceCmd = &cobra.Command{
 			var controlPlaneInstanceConfig config_v0.ControlPlaneInstanceConfig
 			if controlPlaneConfigPath != "" {
 				// load control plane instance config
-				configContent, err := os.ReadFile(controlPlaneConfigPath)
+				configContent, err := cli.ReadConfigContent(controlPlaneConfigPath, controlPlaneStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &controlPlaneInstanceConfig); err != nil {

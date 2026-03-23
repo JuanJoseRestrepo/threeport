@@ -33,6 +33,8 @@ var UpCmd = &cobra.Command{
 		switch cliArgs.InfraProvider {
 		case v0.KubernetesRuntimeInfraProviderEKS:
 			cmd.MarkFlagRequired("aws-region")
+		case v0.KubernetesRuntimeInfraProviderOKE:
+			cmd.MarkFlagRequired("oci-region")
 		}
 
 	},
@@ -133,6 +135,14 @@ func init() {
 		&cliArgs.AwsRegion,
 		"aws-region", "", "AWS region code to install threeport in when using eks provider. If provided, will take precedence over AWS config profile and environment variables.",
 	)
+	UpCmd.Flags().StringVar(
+		&cliArgs.OciRegion,
+		"oci-region", "", "OCI region code to install threeport in when using oke provider.",
+	)
+	UpCmd.Flags().StringVar(
+		&cliArgs.OciConfigProfile,
+		"oci-config-profile", "DEFAULT", "The OCI config profile to draw credentials from when using oke provider.",
+	)
 	UpCmd.Flags().BoolVar(
 		&cliArgs.ForceOverwriteConfig,
 		"force-overwrite-config", false, "Force the overwrite of an existing Threeport instance config.  Warning: this will erase the connection info for the existing instance.  Only do this if the existing instance has already been deleted and is no longer in use.",
@@ -165,8 +175,8 @@ func init() {
 		"debug", false, "Enable debug mode. Defaults to false.",
 	)
 	UpCmd.Flags().BoolVar(
-		&cliArgs.SkipTeardown,
-		"skip-teardown", false, "Skip the teardown of control plane components if an error is encountered.",
+		&cliArgs.TeardownOnFailure,
+		"teardown-on-failure", false, "Automatically tear down control plane resources if an error is encountered.",
 	)
 	UpCmd.Flags().BoolVar(
 		&cliArgs.ControlPlaneOnly,

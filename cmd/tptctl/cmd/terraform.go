@@ -16,6 +16,7 @@ import (
 var (
 	terraformName       string
 	terraformConfigPath string
+	terraformStdin      bool
 	terraformVersion    string
 	terraformOutput     string
 	terraformDecrypt    bool
@@ -66,9 +67,9 @@ var GetTerraformsCmd = &cobra.Command{
 			// load terraform values
 			terraformConfig := config_v0.TerraformConfig{}
 			if terraformConfigPath != "" {
-				configContent, err := os.ReadFile(terraformConfigPath)
+				configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &terraformConfig); err != nil {
@@ -168,9 +169,9 @@ var CreateTerraformCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read terraform config
-		configContent, err := os.ReadFile(terraformConfigPath)
+		configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -220,7 +221,10 @@ func init() {
 		&terraformConfigPath,
 		"config", "c", "", "Path to file with terraform config.",
 	)
-	CreateTerraformCmd.MarkFlagRequired("config")
+	CreateTerraformCmd.Flags().BoolVar(
+		&terraformStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateTerraformCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -245,9 +249,9 @@ var DeleteTerraformCmd = &cobra.Command{
 		}
 
 		// read terraform config
-		configContent, err := os.ReadFile(terraformConfigPath)
+		configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 
@@ -326,9 +330,9 @@ var GetTerraformDefinitionsCmd = &cobra.Command{
 			// load values
 			terraformDefinitionConfig := config_v0.TerraformDefinitionConfig{}
 			if terraformConfigPath != "" {
-				configContent, err := os.ReadFile(terraformConfigPath)
+				configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &terraformDefinitionConfig); err != nil {
@@ -424,9 +428,9 @@ var CreateTerraformDefinitionCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read terraform definition config
-		configContent, err := os.ReadFile(terraformConfigPath)
+		configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create terraform definition based on version
@@ -464,7 +468,10 @@ func init() {
 		&terraformConfigPath,
 		"config", "c", "", "Path to file with terraform definition config.",
 	)
-	CreateTerraformDefinitionCmd.MarkFlagRequired("config")
+	CreateTerraformDefinitionCmd.Flags().BoolVar(
+		&terraformStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateTerraformDefinitionCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -488,9 +495,9 @@ var ReplaceTerraformDefinitionCmd = &cobra.Command{
 		case "v0":
 			var terraformDefinitionConfig config_v0.TerraformDefinitionConfig
 			// load terraform definition config
-			configContent, err := os.ReadFile(terraformConfigPath)
+			configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &terraformDefinitionConfig); err != nil {
@@ -524,7 +531,10 @@ func init() {
 		&terraformConfigPath,
 		"config", "c", "", "Path to file with terraform definition config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceTerraformDefinitionCmd.MarkFlagRequired("config")
+	ReplaceTerraformDefinitionCmd.Flags().BoolVar(
+		&terraformStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceTerraformDefinitionCmd.Flags().StringVarP(
 		&terraformName,
 		"name", "n", "", "Name of existing terraform definition to replace.  If the name in the terraform definition config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -564,9 +574,9 @@ var DeleteTerraformDefinitionCmd = &cobra.Command{
 			var terraformDefinitionConfig config_v0.TerraformDefinitionConfig
 			if terraformConfigPath != "" {
 				// load terraform definition config
-				configContent, err := os.ReadFile(terraformConfigPath)
+				configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &terraformDefinitionConfig); err != nil {
@@ -665,9 +675,9 @@ var GetTerraformInstancesCmd = &cobra.Command{
 			// load values
 			terraformInstanceConfig := config_v0.TerraformInstanceConfig{}
 			if terraformConfigPath != "" {
-				configContent, err := os.ReadFile(terraformConfigPath)
+				configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &terraformInstanceConfig); err != nil {
@@ -767,9 +777,9 @@ var CreateTerraformInstanceCmd = &cobra.Command{
 		apiClient, _, apiEndpoint, _ := GetClientContext(cmd)
 
 		// read terraform instance config
-		configContent, err := os.ReadFile(terraformConfigPath)
+		configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 		if err != nil {
-			cli.Error("failed to read config file", err)
+			cli.Error("failed to read config", err)
 			os.Exit(1)
 		}
 		// create terraform instance based on version
@@ -807,7 +817,10 @@ func init() {
 		&terraformConfigPath,
 		"config", "c", "", "Path to file with terraform instance config.",
 	)
-	CreateTerraformInstanceCmd.MarkFlagRequired("config")
+	CreateTerraformInstanceCmd.Flags().BoolVar(
+		&terraformStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	CreateTerraformInstanceCmd.Flags().StringVarP(
 		&cliArgs.ControlPlaneName,
 		"control-plane-name", "i", "", "Optional. Name of control plane. Will default to current control plane if not provided.",
@@ -831,9 +844,9 @@ var ReplaceTerraformInstanceCmd = &cobra.Command{
 		case "v0":
 			var terraformInstanceConfig config_v0.TerraformInstanceConfig
 			// load terraform instance config
-			configContent, err := os.ReadFile(terraformConfigPath)
+			configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 			if err != nil {
-				cli.Error("failed to read config file", err)
+				cli.Error("failed to read config", err)
 				os.Exit(1)
 			}
 			if err := yaml.UnmarshalStrict(configContent, &terraformInstanceConfig); err != nil {
@@ -867,7 +880,10 @@ func init() {
 		&terraformConfigPath,
 		"config", "c", "", "Path to file with terraform instance config.  The config file must be a complete config, i.e. the provided config will be used to replace the entire existing config for the object with a PUT request.",
 	)
-	ReplaceTerraformInstanceCmd.MarkFlagRequired("config")
+	ReplaceTerraformInstanceCmd.Flags().BoolVar(
+		&terraformStdin,
+		"stdin", false, "Read config from stdin instead of file.",
+	)
 	ReplaceTerraformInstanceCmd.Flags().StringVarP(
 		&terraformName,
 		"name", "n", "", "Name of existing terraform instance to replace.  If the name in the terraform instance config is different from the name provided here, the name of the existing object will be updated with the name in the config.",
@@ -907,9 +923,9 @@ var DeleteTerraformInstanceCmd = &cobra.Command{
 			var terraformInstanceConfig config_v0.TerraformInstanceConfig
 			if terraformConfigPath != "" {
 				// load terraform instance config
-				configContent, err := os.ReadFile(terraformConfigPath)
+				configContent, err := cli.ReadConfigContent(terraformConfigPath, terraformStdin)
 				if err != nil {
-					cli.Error("failed to read config file", err)
+					cli.Error("failed to read config", err)
 					os.Exit(1)
 				}
 				if err := yaml.UnmarshalStrict(configContent, &terraformInstanceConfig); err != nil {
