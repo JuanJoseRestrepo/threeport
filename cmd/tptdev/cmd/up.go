@@ -32,7 +32,7 @@ var upCmd = &cobra.Command{
 		err = cli.CreateGenesisControlPlane(cpi)
 		if err != nil {
 			cli.Error("failed to create threeport control plane", err)
-			if errors.Is(cli.ErrThreeportConfigAlreadyExists, err) {
+			if errors.Is(err, cli.ErrThreeportConfigAlreadyExists) {
 				cli.Info("if you wish to overwrite the existing config use --force-overwrite-config flag")
 				cli.Warning("you will lose the ability to connect to the existing threeport control planes if they are still running")
 			}
@@ -66,11 +66,11 @@ func init() {
 	)
 	rootCmd.PersistentFlags().StringVar(
 		&cliArgs.CfgFile,
-		"threeport-config", "", "Path to config file (default is $HOME/.config/threeport/config.yaml). Can also be set with environment variable THREEPORT_CONFIG",
+		"threeport-config", "", "Path to config file (default is $HOME/.threeport/config.yaml). Can also be set with environment variable THREEPORT_CONFIG",
 	)
 	rootCmd.PersistentFlags().StringVar(
 		&cliArgs.ProviderConfigDir,
-		"provider-config", "", "Path to infra provider config directory (default is $HOME/.config/threeport/).",
+		"provider-config", "", "Path to infra provider config directory (default is $HOME/.threeport/).",
 	)
 	upCmd.Flags().IntVar(
 		&cliArgs.NumWorkerNodes,

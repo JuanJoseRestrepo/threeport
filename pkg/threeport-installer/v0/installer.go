@@ -63,6 +63,17 @@ type Options struct {
 	// The OCI compartment OCID to install threeport control plane in.
 	OciCompartmentOcid string
 
+	// The Google Cloud project ID where the cluster infra is provisioned.
+	GcpProjectId string
+
+	// The Google Cloud region where the cluster infra is provisioned.
+	GcpRegion string
+
+	// The GCP service account email for Workload Identity. When set, the
+	// gcp-controller's Kubernetes ServiceAccount will be annotated to use
+	// this GCP service account via Workload Identity.
+	GcpServiceAccountEmail string
+
 	// Path to config file for threeport
 	CfgFile string
 

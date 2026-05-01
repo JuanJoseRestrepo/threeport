@@ -16,11 +16,6 @@ func DeleteObjectByTypeAndID(apiClient *http.Client, apiAddr string, objectType 
 			return fmt.Errorf("failed to delete AttachedObjectReference: %w", err)
 		}
 
-	case "v0.AwsAccount":
-		if _, err := DeleteAwsAccount(apiClient, apiAddr, id); err != nil {
-			return fmt.Errorf("failed to delete AwsAccount: %w", err)
-		}
-
 	case "v0.AwsEksKubernetesRuntimeDefinition":
 		if _, err := DeleteAwsEksKubernetesRuntimeDefinition(apiClient, apiAddr, id); err != nil {
 			return fmt.Errorf("failed to delete AwsEksKubernetesRuntimeDefinition: %w", err)
@@ -29,6 +24,11 @@ func DeleteObjectByTypeAndID(apiClient *http.Client, apiAddr string, objectType 
 	case "v0.AwsEksKubernetesRuntimeInstance":
 		if _, err := DeleteAwsEksKubernetesRuntimeInstance(apiClient, apiAddr, id); err != nil {
 			return fmt.Errorf("failed to delete AwsEksKubernetesRuntimeInstance: %w", err)
+		}
+
+	case "v0.AwsProvider":
+		if _, err := DeleteAwsProvider(apiClient, apiAddr, id); err != nil {
+			return fmt.Errorf("failed to delete AwsProvider: %w", err)
 		}
 
 	case "v0.ControlPlaneDefinition":
@@ -74,6 +74,21 @@ func DeleteObjectByTypeAndID(apiClient *http.Client, apiAddr string, objectType 
 	case "v0.GatewayTcpPort":
 		if _, err := DeleteGatewayTcpPort(apiClient, apiAddr, id); err != nil {
 			return fmt.Errorf("failed to delete GatewayTcpPort: %w", err)
+		}
+
+	case "v0.GcpGkeKubernetesRuntimeDefinition":
+		if _, err := DeleteGcpGkeKubernetesRuntimeDefinition(apiClient, apiAddr, id); err != nil {
+			return fmt.Errorf("failed to delete GcpGkeKubernetesRuntimeDefinition: %w", err)
+		}
+
+	case "v0.GcpGkeKubernetesRuntimeInstance":
+		if _, err := DeleteGcpGkeKubernetesRuntimeInstance(apiClient, apiAddr, id); err != nil {
+			return fmt.Errorf("failed to delete GcpGkeKubernetesRuntimeInstance: %w", err)
+		}
+
+	case "v0.GcpProvider":
+		if _, err := DeleteGcpProvider(apiClient, apiAddr, id); err != nil {
+			return fmt.Errorf("failed to delete GcpProvider: %w", err)
 		}
 
 	case "v0.HelmWorkloadDefinition":

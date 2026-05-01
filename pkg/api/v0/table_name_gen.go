@@ -12,11 +12,6 @@ func (AttachedObjectReference) TableName() string {
 	return "v0_attached_object_references"
 }
 
-// TableName sets the name of the table for the AwsAccount objects in the database.
-func (AwsAccount) TableName() string {
-	return "v0_aws_accounts"
-}
-
 // TableName sets the name of the table for the AwsEksKubernetesRuntimeDefinition objects in the database.
 func (AwsEksKubernetesRuntimeDefinition) TableName() string {
 	return "v0_aws_eks_kubernetes_runtime_definitions"
@@ -25,6 +20,11 @@ func (AwsEksKubernetesRuntimeDefinition) TableName() string {
 // TableName sets the name of the table for the AwsEksKubernetesRuntimeInstance objects in the database.
 func (AwsEksKubernetesRuntimeInstance) TableName() string {
 	return "v0_aws_eks_kubernetes_runtime_instances"
+}
+
+// TableName sets the name of the table for the AwsProvider objects in the database.
+func (AwsProvider) TableName() string {
+	return "v0_aws_providers"
 }
 
 // TableName sets the name of the table for the ControlPlaneComponent objects in the database.
@@ -80,6 +80,21 @@ func (GatewayInstance) TableName() string {
 // TableName sets the name of the table for the GatewayTcpPort objects in the database.
 func (GatewayTcpPort) TableName() string {
 	return "v0_gateway_tcp_ports"
+}
+
+// TableName sets the name of the table for the GcpGkeKubernetesRuntimeDefinition objects in the database.
+func (GcpGkeKubernetesRuntimeDefinition) TableName() string {
+	return "v0_gcp_gke_kubernetes_runtime_definitions"
+}
+
+// TableName sets the name of the table for the GcpGkeKubernetesRuntimeInstance objects in the database.
+func (GcpGkeKubernetesRuntimeInstance) TableName() string {
+	return "v0_gcp_gke_kubernetes_runtime_instances"
+}
+
+// TableName sets the name of the table for the GcpProvider objects in the database.
+func (GcpProvider) TableName() string {
+	return "v0_gcp_providers"
 }
 
 // TableName sets the name of the table for the HelmWorkloadDefinition objects in the database.

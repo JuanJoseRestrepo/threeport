@@ -17,6 +17,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v2"
 	"gorm.io/datatypes"
+
+	climsg "github.com/threeport/threeport/pkg/msg"
 )
 
 // PulumiWorkspace encapsulates all Pulumi workspace, stack, and state management
@@ -47,12 +49,12 @@ type PulumiWorkspace struct {
 }
 
 // logInfo logs an informational message using the structured logger if
-// available, otherwise falls back to fmt.Println for the CLI path.
+// available, otherwise falls back to CLI info formatting for the CLI path.
 func (w *PulumiWorkspace) logInfo(msg string, keysAndValues ...interface{}) {
 	if w.Logger != nil {
 		w.Logger.Info(msg, keysAndValues...)
 	} else {
-		fmt.Println(msg)
+		climsg.Info(msg)
 	}
 }
 
@@ -303,12 +305,10 @@ func (w *PulumiWorkspace) DestroyStack() error {
 
 // DeleteStackState deletes the Pulumi stack state directory.
 func (w *PulumiWorkspace) DeleteStackState() error {
-	homeDir, err := os.UserHomeDir()
+	stateDir, err := GetPulumiRuntimeStateDir(w.RuntimeInstanceName)
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
-
-	stateDir := filepath.Join(homeDir, ".threeport", "pulumi-state", w.RuntimeInstanceName)
 	if _, err := os.Stat(stateDir); os.IsNotExist(err) {
 		return nil // directory doesn't exist, nothing to delete
 	}
@@ -318,11 +318,10 @@ func (w *PulumiWorkspace) DeleteStackState() error {
 // HasStateDir returns true if the Pulumi state directory exists on disk,
 // indicating infrastructure may still exist or has state to clean up.
 func (w *PulumiWorkspace) HasStateDir() bool {
-	homeDir, err := os.UserHomeDir()
+	stateDir, err := GetPulumiRuntimeStateDir(w.RuntimeInstanceName)
 	if err != nil {
 		return false
 	}
-	stateDir := filepath.Join(homeDir, ".threeport", "pulumi-state", w.RuntimeInstanceName)
 	_, err = os.Stat(stateDir)
 	return err == nil
 }
@@ -487,18 +486,14 @@ func (w *PulumiWorkspace) getEnvVars() (map[string]string, error) {
 
 // setStateDir sets the state directory for the Pulumi stack.
 func (w *PulumiWorkspace) setStateDir() error {
-	homeDir, err := os.UserHomeDir()
+	dir, err := GetPulumiRuntimeStateDir(w.RuntimeInstanceName)
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
-
-	w.stateDir = filepath.Join(homeDir, ".threeport", "pulumi-state", w.RuntimeInstanceName)
-
-	// ensure state directory exists
+	w.stateDir = dir
 	if err := os.MkdirAll(w.stateDir, 0755); err != nil {
 		return fmt.Errorf("failed to create state directory: %w", err)
 	}
-
 	return nil
 }
 

@@ -23,10 +23,15 @@ const tier = threeport.ControlPlaneTierDev
 
 // UpCmd represents the create threeport command
 var UpCmd = &cobra.Command{
-	Use:          "up",
-	Example:      "tptctl up --name my-threeport",
-	Short:        "Spin up a new deployment of the Threeport control plane",
-	Long:         `Spin up a new deployment of the Threeport control plane.`,
+	Use:     "up",
+	Example: "tptctl up --name genesis",
+	Short:   "Spin up a new deployment of the Threeport control plane",
+	Long: `Spin up a new deployment of the Threeport control plane. A Threeport
+control plane created with this command is called a 'genesis' control plane.  Subsequent
+Threeport control planes can be created by the genesis control plane via the control plane API.
+These are called 'derived' control planes.  These can also be referred to as 'parent' or 'child'
+control planes if they are used to create or are created by another control plane.
+`,
 	SilenceUsage: true,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// if using eks provider, ensure aws-region is provided
@@ -36,7 +41,6 @@ var UpCmd = &cobra.Command{
 		case v0.KubernetesRuntimeInfraProviderOKE:
 			cmd.MarkFlagRequired("oci-region")
 		}
-
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		// set the config file path based on:
@@ -92,7 +96,7 @@ var UpCmd = &cobra.Command{
 		err = cli.CreateGenesisControlPlane(cpi)
 		if err != nil {
 			cli.Error("failed to create threeport control plane", err)
-			if errors.Is(cli.ErrThreeportConfigAlreadyExists, err) {
+			if errors.Is(err, cli.ErrThreeportConfigAlreadyExists) {
 				cli.Info("if you wish to overwrite the existing config use --force-overwrite-config flag")
 				cli.Warning("you will lose the ability to connect to the existing threeport control planes if they are still running")
 			}
@@ -143,6 +147,14 @@ func init() {
 		&cliArgs.OciConfigProfile,
 		"oci-config-profile", "DEFAULT", "The OCI config profile to draw credentials from when using oke provider.",
 	)
+	UpCmd.Flags().StringVar(
+		&cliArgs.GcpProjectId,
+		"gcp-project-id", "", "Google Cloud project ID to install threeport in when using gke provider. If provided, will take precedence over environment variables.",
+	)
+	UpCmd.Flags().StringVar(
+		&cliArgs.GcpRegion,
+		"gcp-region", "", "Google Cloud region code to install threeport in when using gke provider. If provided, will take precedence over environment variables.",
+	)
 	UpCmd.Flags().BoolVar(
 		&cliArgs.ForceOverwriteConfig,
 		"force-overwrite-config", false, "Force the overwrite of an existing Threeport instance config.  Warning: this will erase the connection info for the existing instance.  Only do this if the existing instance has already been deleted and is no longer in use.",
@@ -169,7 +181,8 @@ func init() {
 	)
 	UpCmd.Flags().IntVar(
 		&cliArgs.NumWorkerNodes,
-		"num-worker-nodes", 0, "Number of additional worker nodes to deploy. Only applies to kind provider. (default is 0)")
+		"num-worker-nodes", 0, "Number of additional worker nodes to deploy. Only applies to kind provider. (default is 0)",
+	)
 	UpCmd.Flags().BoolVar(
 		&cliArgs.Debug,
 		"debug", false, "Enable debug mode. Defaults to false.",

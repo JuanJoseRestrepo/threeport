@@ -16,6 +16,10 @@ import (
 	"github.com/nukleros/aws-builder/pkg/eks"
 	"github.com/nukleros/aws-builder/pkg/eks/connection"
 	builder_iam "github.com/nukleros/aws-builder/pkg/iam"
+	"gorm.io/datatypes"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/client-go/dynamic"
+
 	"github.com/threeport/threeport/internal/kubernetes-runtime/mapping"
 	"github.com/threeport/threeport/internal/provider"
 	v0 "github.com/threeport/threeport/pkg/api/v0"
@@ -23,9 +27,6 @@ import (
 	kube "github.com/threeport/threeport/pkg/kube/v0"
 	threeport "github.com/threeport/threeport/pkg/threeport-installer/v0"
 	util "github.com/threeport/threeport/pkg/util/v0"
-	"gorm.io/datatypes"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/client-go/dynamic"
 )
 
 // DeployEksInfra deploys the EKS infrastructure for the control plane.
@@ -304,7 +305,10 @@ func InstallEksKubernetesResources(
 	return nil
 }
 
-// ConfigureControlPlaneWithEksConfig
+// ConfigureControlPlaneWithEksConfig creates the following objects in the Threeport API:
+// - the default AWS provider that was used to create the Threeport control plane runtime environment
+// - the AWS EKS kubernetes runtime definition that was used to create the EKS kubernetes runtime for the control plane
+// - the AWS EKS kubernetes runtime instance that was used to create the EKS kubernetes runtime for the control plane
 func ConfigureControlPlaneWithEksConfig(
 	cpi *threeport.ControlPlaneInstaller,
 	uninstaller *Uninstaller,
@@ -318,11 +322,12 @@ func ConfigureControlPlaneWithEksConfig(
 	kubernetesRuntimeInstResult *v0.KubernetesRuntimeInstance,
 ) error {
 
-	awsAccount := v0.AwsAccount{
-		Name:           util.Ptr("default-account"),
-		AccountID:      callerIdentity.Account,
-		DefaultAccount: util.Ptr(true),
-		DefaultRegion:  &awsConfigResourceManager.Region,
+	// create default AWS provider
+	awsProvider := v0.AwsProvider{
+		Name:            util.Ptr(provider.DefaultAccountName),
+		AccountID:       callerIdentity.Account,
+		DefaultProvider: util.Ptr(true),
+		DefaultRegion:   &awsConfigResourceManager.Region,
 		RoleArn: util.Ptr(
 			provider.GetResourceManagerRoleArn(
 				cpi.Opts.ControlPlaneName,
@@ -330,13 +335,13 @@ func ConfigureControlPlaneWithEksConfig(
 			),
 		),
 	}
-	createdAwsAccount, err := client.CreateAwsAccount(
+	createdAwsProvider, err := client.CreateAwsProvider(
 		apiClient,
 		threeportAPIEndpoint,
-		&awsAccount,
+		&awsProvider,
 	)
 	if err != nil {
-		return uninstaller.cleanOnCreateError("failed to create new default AWS account", err)
+		return uninstaller.cleanOnCreateError("failed to create new default AWS provider", err)
 	}
 
 	// create aws eks k8s runtime definition
@@ -347,7 +352,6 @@ func ConfigureControlPlaneWithEksConfig(
 		Definition: v0.Definition{
 			Name: &eksRuntimeDefName,
 		},
-		AwsAccountID:                  createdAwsAccount.ID,
 		ZoneCount:                     &zoneCount,
 		DefaultNodeGroupInstanceType:  &kubernetesRuntimeInfraEKS.DefaultNodeGroupInstanceType,
 		DefaultNodeGroupInitialSize:   util.Ptr(int(kubernetesRuntimeInfraEKS.DefaultNodeGroupInitialNodes)),
@@ -385,6 +389,7 @@ func ConfigureControlPlaneWithEksConfig(
 		Reconciliation: v0.Reconciliation{
 			Reconciled: &reconciled,
 		},
+		AwsProviderID:                       createdAwsProvider.ID,
 		Region:                              &awsConfigResourceManager.Region,
 		AwsEksKubernetesRuntimeDefinitionID: createdAwsEksKubernetesRuntimeDef.ID,
 		KubernetesRuntimeInstanceID:         kubernetesRuntimeInstResult.ID,
@@ -398,6 +403,7 @@ func ConfigureControlPlaneWithEksConfig(
 	if err != nil {
 		return uninstaller.cleanOnCreateError("failed to create new AWS EKS kubernetes runtime instance for control plane cluster", err)
 	}
+
 	return nil
 }
 

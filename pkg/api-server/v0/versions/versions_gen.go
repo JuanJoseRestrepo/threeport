@@ -4,9 +4,9 @@ package versions
 
 func AddVersions() {
 	AddAttachedObjectReferenceVersions()
-	AddAwsAccountVersions()
 	AddAwsEksKubernetesRuntimeDefinitionVersions()
 	AddAwsEksKubernetesRuntimeInstanceVersions()
+	AddAwsProviderVersions()
 	AddControlPlaneDefinitionVersions()
 	AddControlPlaneInstanceVersions()
 	AddDomainNameDefinitionVersions()
@@ -16,6 +16,9 @@ func AddVersions() {
 	AddGatewayHttpPortVersions()
 	AddGatewayInstanceVersions()
 	AddGatewayTcpPortVersions()
+	AddGcpGkeKubernetesRuntimeDefinitionVersions()
+	AddGcpGkeKubernetesRuntimeInstanceVersions()
+	AddGcpProviderVersions()
 	AddHelmWorkloadDefinitionVersions()
 	AddHelmWorkloadInstanceVersions()
 	AddKubernetesRuntimeDefinitionVersions()

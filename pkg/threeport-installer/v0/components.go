@@ -404,6 +404,30 @@ func (cpi *ControlPlaneInstaller) InstallThreeportControllers(
 			}
 		}
 
+		// create controller service account
+		serviceAccountMetadata := map[string]interface{}{
+			"name":      controller.ServiceAccountName,
+			"namespace": cpi.Opts.Namespace,
+		}
+
+		// add Workload Identity annotation for gcp-controller when GCP service account is configured
+		if controller.Name == ThreeportGcpControllerName && cpi.Opts.GcpServiceAccountEmail != "" {
+			serviceAccountMetadata["annotations"] = map[string]interface{}{
+				"iam.gke.io/gcp-service-account": cpi.Opts.GcpServiceAccountEmail,
+			}
+		}
+
+		serviceAccount := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ServiceAccount",
+				"metadata":   serviceAccountMetadata,
+			},
+		}
+		if err := cpi.CreateOrUpdateKubeResource(serviceAccount, kubeClient, mapper); err != nil {
+			return fmt.Errorf("failed to create controller service account: %w", err)
+		}
+
 		if err := cpi.UpdateControllerDeployment(
 			kubeClient,
 			mapper,
@@ -648,7 +672,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAgentDeployment(
 					"app.kubernetes.io/part-of":    cpi.Opts.Namespace,
 					"app.kubernetes.io/managed-by": "threeport",
 				},
-				"name":      "threeport-agent-controller-manager",
+				"name":      ThreeportAgentName,
 				"namespace": cpi.Opts.Namespace,
 			},
 		},
@@ -897,7 +921,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAgentDeployment(
 			"subjects": []interface{}{
 				map[string]interface{}{
 					"kind":      "ServiceAccount",
-					"name":      "threeport-agent-controller-manager",
+					"name":      ThreeportAgentName,
 					"namespace": cpi.Opts.Namespace,
 				},
 			},
@@ -930,7 +954,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAgentDeployment(
 			"subjects": []interface{}{
 				map[string]interface{}{
 					"kind":      "ServiceAccount",
-					"name":      "threeport-agent-controller-manager",
+					"name":      ThreeportAgentName,
 					"namespace": cpi.Opts.Namespace,
 				},
 			},
@@ -963,7 +987,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAgentDeployment(
 			"subjects": []interface{}{
 				map[string]interface{}{
 					"kind":      "ServiceAccount",
-					"name":      "threeport-agent-controller-manager",
+					"name":      ThreeportAgentName,
 					"namespace": cpi.Opts.Namespace,
 				},
 			},
@@ -1155,7 +1179,7 @@ func (cpi *ControlPlaneInstaller) UpdateThreeportAgentDeployment(
 						//"securityContext": map[string]interface{}{
 						//	"runAsNonRoot": true,
 						//},
-						"serviceAccountName":            "threeport-agent-controller-manager",
+						"serviceAccountName":            ThreeportAgentName,
 						"terminationGracePeriodSeconds": 10,
 					},
 				},
@@ -1291,6 +1315,10 @@ func (cpi *ControlPlaneInstaller) GetThreeportAPIEndpoint(
 					return fmt.Errorf("failed to retrieve threeport API load balancer hostname: %w", err)
 				}
 			case v0.KubernetesRuntimeInfraProviderOKE:
+				if apiEndpoint, found, err = unstructured.NestedString(firstIngress, "ip"); err != nil || !found {
+					return fmt.Errorf("failed to retrieve threeport API load balancer ip: %w", err)
+				}
+			case v0.KubernetesRuntimeInfraProviderGKE:
 				if apiEndpoint, found, err = unstructured.NestedString(firstIngress, "ip"); err != nil || !found {
 					return fmt.Errorf("failed to retrieve threeport API load balancer ip: %w", err)
 				}

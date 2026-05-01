@@ -13,6 +13,7 @@ import (
 	builder_config "github.com/nukleros/aws-builder/pkg/config"
 	"github.com/nukleros/aws-builder/pkg/eks/connection"
 	"github.com/oracle/oci-go-sdk/v65/common"
+	"golang.org/x/oauth2/google"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -149,7 +150,7 @@ func GetRestConfig(
 	threeportAPIEndpoint string,
 	encryptionKey string,
 ) (*rest.Config, error) {
-	if runtime.APIEndpoint == nil {
+	if runtime == nil || runtime.APIEndpoint == nil {
 		return nil, errors.New("cannot get REST config without API endpoint")
 	}
 
@@ -250,10 +251,18 @@ func GetRestConfig(
 						return nil, fmt.Errorf("failed to refresh connection token for OKE cluster: %w", err)
 					}
 					restConfig = *config
+				case v0.KubernetesRuntimeInfraProviderGKE:
+					if config, err = refreshGKEConnection(
+						runtime,
+						threeportAPIClient,
+						threeportAPIEndpoint,
+						encryptionKey,
+					); err != nil {
+						return nil, fmt.Errorf("failed to refresh connection token for GKE cluster: %w", err)
+					}
+					restConfig = *config
 				default:
-					return nil, errors.New(
-						fmt.Sprintf("unable to refresh connection token for unsupported infra provider %s:", *definition.InfraProvider),
-					)
+					return nil, fmt.Errorf("unable to refresh connection token for unsupported infra provider %s:", *definition.InfraProvider)
 				}
 			}
 		}
@@ -440,27 +449,17 @@ func refreshEKSConnection(
 		return nil, fmt.Errorf("failed to get AWS EKS kubernetes runtime instance by kubernetes runtime instance ID %d: %w", runtimeInstance.ID, err)
 	}
 
-	// get EKS runtime definition
-	eksRuntimeDefinition, err := client.GetAwsEksKubernetesRuntimeDefinitionByID(
+	// get AWS provider
+	awsProvider, err := client.GetAwsProviderByID(
 		threeportAPIClient,
 		threeportAPIEndpoint,
-		*eksRuntimeInstance.AwsEksKubernetesRuntimeDefinitionID,
+		*eksRuntimeInstance.AwsProviderID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to AWS EKS kubernetes runtime definition by ID %d: %w", eksRuntimeInstance.AwsEksKubernetesRuntimeDefinitionID, err)
+		return nil, fmt.Errorf("failed to get AWS provider by ID %d: %w", *eksRuntimeInstance.AwsProviderID, err)
 	}
 
-	// get AWS account
-	awsAccount, err := client.GetAwsAccountByID(
-		threeportAPIClient,
-		threeportAPIEndpoint,
-		*eksRuntimeDefinition.AwsAccountID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AWS account by ID %d: %w", *eksRuntimeDefinition.AwsAccountID, err)
-	}
-
-	awsConfig, err := GetAwsConfigFromAwsAccount(encryptionKey, *eksRuntimeInstance.Region, awsAccount)
+	awsConfig, err := GetAwsConfigFromAwsProvider(encryptionKey, *eksRuntimeInstance.Region, awsProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS config for EKS cluster token refresh: %w", err)
 	}
@@ -496,19 +495,65 @@ func refreshEKSConnection(
 	return &restConfig, nil
 }
 
-// GetAwsConfigFromAwsAccount returns an aws config from an aws account.
-func GetAwsConfigFromAwsAccount(encryptionKey, region string, awsAccount *v0.AwsAccount) (*aws.Config, error) {
+// refreshGKEConnection refreshes the connection token for a GKE cluster.
+func refreshGKEConnection(
+	runtimeInstance *v0.KubernetesRuntimeInstance,
+	threeportAPIClient *http.Client,
+	threeportAPIEndpoint string,
+	encryptionKey string,
+) (*rest.Config, error) {
+	ctx := context.Background()
+
+	// get a new access token using Google Application Default Credentials
+	// this relies on ADC being configured (via gcloud auth application-default login
+	// or GOOGLE_APPLICATION_CREDENTIALS environment variable)
+	tokenSource, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Google token source: %w", err)
+	}
+
+	token, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get access token from Google: %w", err)
+	}
+
+	// generate updated rest config
+	restConfig := rest.Config{
+		Host:        *runtimeInstance.APIEndpoint,
+		BearerToken: token.AccessToken,
+		TLSClientConfig: rest.TLSClientConfig{
+			CAData: []byte(*runtimeInstance.CACertificate),
+		},
+	}
+
+	// update threeport API with new connection info
+	runtimeInstance.ConnectionToken = &token.AccessToken
+	runtimeInstance.ConnectionTokenExpiration = &token.Expiry
+	_, err = client.UpdateKubernetesRuntimeInstance(
+		threeportAPIClient,
+		threeportAPIEndpoint,
+		runtimeInstance,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update kubernetes runtime instance kubernetes connection info: %w", err)
+	}
+
+	return &restConfig, nil
+}
+
+// GetAwsConfigFromAwsProvider returns an aws config from an aws account.
+func GetAwsConfigFromAwsProvider(encryptionKey, region string, awsProvider *v0.AwsProvider) (*aws.Config, error) {
 	accessKeyId := ""
 	secretAccessKey := ""
 
 	// if API keys are provided, decrypt and return aws config
-	if awsAccount.AccessKeyID != nil && awsAccount.SecretAccessKey != nil {
+	if awsProvider.AccessKeyID != nil && awsProvider.SecretAccessKey != nil {
 		// decrypt access key id and secret access key
-		aki, err := encryption.Decrypt(encryptionKey, *awsAccount.AccessKeyID)
+		aki, err := encryption.Decrypt(encryptionKey, *awsProvider.AccessKeyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt access key id: %w", err)
 		}
-		sak, err := encryption.Decrypt(encryptionKey, *awsAccount.SecretAccessKey)
+		sak, err := encryption.Decrypt(encryptionKey, *awsProvider.SecretAccessKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt secret access key: %w", err)
 		}
@@ -538,7 +583,7 @@ func GetAwsConfigFromAwsAccount(encryptionKey, region string, awsAccount *v0.Aws
 	// pod will be authenticated via IRSA to an IAM role.
 	// https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html
 	if strings.Contains(*callerIdentity.Arn, "assumed-role") &&
-		*callerIdentity.Account == *awsAccount.AccountID {
+		*callerIdentity.Account == *awsProvider.AccountID {
 		return awsConfig, nil
 	}
 
@@ -546,12 +591,12 @@ func GetAwsConfigFromAwsAccount(encryptionKey, region string, awsAccount *v0.Aws
 	externalId := ""
 
 	// if a role arn is provided, use it
-	if awsAccount.RoleArn != nil {
-		roleArn = *awsAccount.RoleArn
+	if awsProvider.RoleArn != nil {
+		roleArn = *awsProvider.RoleArn
 
 		// if an external ID is provided with role arn, use it
-		if awsAccount.ExternalId != nil {
-			externalId = *awsAccount.ExternalId
+		if awsProvider.ExternalId != nil {
+			externalId = *awsProvider.ExternalId
 		}
 	}
 
