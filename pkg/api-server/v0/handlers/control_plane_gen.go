@@ -322,8 +322,15 @@ func (h Handler) UpdateControlPlaneDefinition(c echo.Context) error {
 	}
 
 	// update object in database
-	if result := h.DB.Model(&existingControlPlaneDefinition).Updates(updatedControlPlaneDefinition); result.Error != nil {
+	if result := h.DB.Model(&existingControlPlaneDefinition).Updates(&updatedControlPlaneDefinition); result.Error != nil {
 		h.Logger.Error("handler error: error updating object", zap.Error(result.Error))
+		// check if this is a custom HTTP error with specific status code
+		var httpErr *util_v0.HttpError
+		if errors.As(result.Error, &httpErr) {
+			return apiserver_lib.ResponseStatusErr(
+				httpErr.GetStatusCode(), c, nil, result.Error, objectType,
+			)
+		}
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
@@ -406,6 +413,13 @@ func (h Handler) ReplaceControlPlaneDefinition(c echo.Context) error {
 	updatedControlPlaneDefinition.ID = existingControlPlaneDefinition.ID
 	if result := h.DB.Session(&gorm.Session{FullSaveAssociations: false}).Omit("CreatedAt", "DeletedAt").Save(&updatedControlPlaneDefinition); result.Error != nil {
 		h.Logger.Error("handler error: error persisting object", zap.Error(result.Error))
+		// check if this is a custom HTTP error with specific status code
+		var httpErr *util_v0.HttpError
+		if errors.As(result.Error, &httpErr) {
+			return apiserver_lib.ResponseStatusErr(
+				httpErr.GetStatusCode(), c, nil, result.Error, objectType,
+			)
+		}
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
@@ -472,7 +486,7 @@ func (h Handler) DeleteControlPlaneDefinition(c echo.Context) error {
 				DeletionScheduled: &timestamp,
 				Reconciled:        &reconciled,
 			}}
-		if result := h.DB.Model(&controlPlaneDefinition).Updates(scheduledControlPlaneDefinition); result.Error != nil {
+		if result := h.DB.Model(&controlPlaneDefinition).Updates(&scheduledControlPlaneDefinition); result.Error != nil {
 			h.Logger.Error("handler error: error creating scheduled deletion", zap.Error(result.Error))
 			return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 		}
@@ -829,8 +843,15 @@ func (h Handler) UpdateControlPlaneInstance(c echo.Context) error {
 	}
 
 	// update object in database
-	if result := h.DB.Model(&existingControlPlaneInstance).Updates(updatedControlPlaneInstance); result.Error != nil {
+	if result := h.DB.Model(&existingControlPlaneInstance).Updates(&updatedControlPlaneInstance); result.Error != nil {
 		h.Logger.Error("handler error: error updating object", zap.Error(result.Error))
+		// check if this is a custom HTTP error with specific status code
+		var httpErr *util_v0.HttpError
+		if errors.As(result.Error, &httpErr) {
+			return apiserver_lib.ResponseStatusErr(
+				httpErr.GetStatusCode(), c, nil, result.Error, objectType,
+			)
+		}
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
@@ -913,6 +934,13 @@ func (h Handler) ReplaceControlPlaneInstance(c echo.Context) error {
 	updatedControlPlaneInstance.ID = existingControlPlaneInstance.ID
 	if result := h.DB.Session(&gorm.Session{FullSaveAssociations: false}).Omit("CreatedAt", "DeletedAt").Save(&updatedControlPlaneInstance); result.Error != nil {
 		h.Logger.Error("handler error: error persisting object", zap.Error(result.Error))
+		// check if this is a custom HTTP error with specific status code
+		var httpErr *util_v0.HttpError
+		if errors.As(result.Error, &httpErr) {
+			return apiserver_lib.ResponseStatusErr(
+				httpErr.GetStatusCode(), c, nil, result.Error, objectType,
+			)
+		}
 		return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 	}
 
@@ -973,7 +1001,7 @@ func (h Handler) DeleteControlPlaneInstance(c echo.Context) error {
 				DeletionScheduled: &timestamp,
 				Reconciled:        &reconciled,
 			}}
-		if result := h.DB.Model(&controlPlaneInstance).Updates(scheduledControlPlaneInstance); result.Error != nil {
+		if result := h.DB.Model(&controlPlaneInstance).Updates(&scheduledControlPlaneInstance); result.Error != nil {
 			h.Logger.Error("handler error: error creating scheduled deletion", zap.Error(result.Error))
 			return apiserver_lib.ResponseStatus500(c, nil, result.Error, objectType)
 		}

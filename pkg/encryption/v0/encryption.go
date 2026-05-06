@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 
 	util "github.com/threeport/threeport/pkg/util/v0"
 )
@@ -147,6 +148,15 @@ func IsEncryptedField(obj interface{}, fieldName string) (bool, error) {
 	return false, nil
 }
 
+// RedactedValuePlaceholder is the string substituted for the plaintext of an
+// encrypted field when an API object is serialized for display without the
+// encryption key. Callers that round-trip an object through tptctl get →
+// tptctl replace (without --decrypt-secrets) will see this value in their
+// config file; BeforeCreate / BeforeUpdate hooks skip encryption on fields
+// whose incoming value equals this placeholder, so the DB retains its
+// existing ciphertext rather than storing the marker as plaintext.
+const RedactedValuePlaceholder = "[encrypted value redacted]"
+
 // RedactEncryptedValues takes an API object, redacts the value on any
 // encrypted fields and returns the object with encrypted fields redacted.
 func RedactEncryptedValues(obj interface{}) interface{} {
@@ -155,9 +165,19 @@ func RedactEncryptedValues(obj interface{}) interface{} {
 	for i := 0; i < objType.NumField(); i++ {
 		field := objType.Field(i)
 		fieldVal := objVal.Field(i)
-		encrypt := field.Tag.Get("encrypt")
-		if encrypt == "true" {
-			fieldVal.Elem().SetString("[encrypted value redacted]")
+		if field.Tag.Get("encrypt") != "true" {
+			continue
+		}
+		switch fieldVal.Kind() {
+		case reflect.Ptr:
+			if fieldVal.IsNil() {
+				continue
+			}
+			fieldVal.Elem().SetString(RedactedValuePlaceholder)
+		case reflect.Slice:
+			for j := 0; j < fieldVal.Len(); j++ {
+				fieldVal.Index(j).SetString(RedactedValuePlaceholder)
+			}
 		}
 	}
 
@@ -172,19 +192,42 @@ func DecryptValues(obj interface{}, encryptionKey string) (interface{}, error) {
 	for i := 0; i < objType.NumField(); i++ {
 		field := objType.Field(i)
 		fieldVal := objVal.Field(i)
-		encrypt := field.Tag.Get("encrypt")
-		if encrypt == "true" {
+		if field.Tag.Get("encrypt") != "true" {
+			continue
+		}
+		switch fieldVal.Kind() {
+		case reflect.Ptr:
+			if fieldVal.IsNil() {
+				continue
+			}
 			underlyingVal, err := util.GetPtrValue(fieldVal)
 			if err != nil {
 				return obj, fmt.Errorf("failed to get string value for %s: %w", field.Name, err)
 			}
-
 			decryptedVal, err := Decrypt(encryptionKey, underlyingVal)
 			if err != nil {
 				return obj, fmt.Errorf("failed to decrypt value in field %s: %w", field.Name, err)
 			}
-
 			fieldVal.Elem().SetString(decryptedVal)
+		case reflect.Slice:
+			if fieldVal.IsNil() || fieldVal.Len() == 0 {
+				continue
+			}
+			slice, ok := fieldVal.Interface().([]string)
+			if !ok {
+				return obj, fmt.Errorf("encrypt tag on non-[]string slice field %s", field.Name)
+			}
+			for j, entry := range slice {
+				parts := strings.SplitN(entry, "=", 2)
+				if len(parts) != 2 {
+					return obj, fmt.Errorf("%s[%d] is not in KEY=VALUE format", field.Name, j)
+				}
+				decValue, err := Decrypt(encryptionKey, parts[1])
+				if err != nil {
+					return obj, fmt.Errorf("failed to decrypt %s[%d]: %w", field.Name, j, err)
+				}
+				fieldVal.Index(j).SetString(parts[0] + "=" + decValue)
+			}
 		}
 	}
 
