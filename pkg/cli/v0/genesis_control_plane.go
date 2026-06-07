@@ -16,6 +16,7 @@ import (
 	"github.com/nukleros/aws-builder/pkg/eks"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/threeport/threeport/internal/kubernetes-runtime/mapping"
 	"github.com/threeport/threeport/internal/provider"
@@ -96,13 +97,11 @@ func InitArgs(args *GenesisControlPlaneCLIArgs) {
 		args.ProviderConfigDir = providerConf
 	}
 
-	// kubeconfig
-	defaultKubeconfig, err := kube.DefaultKubeconfig()
-	if err != nil {
-		Error("failed to get path to default kubeconfig", err)
-		os.Exit(1)
+	// fall back to client-go's standard kubeconfig precedence
+	// ($KUBECONFIG, then ~/.kube/config) when --kubeconfig isn't supplied
+	if args.KubeconfigPath == "" {
+		args.KubeconfigPath = clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
 	}
-	args.KubeconfigPath = defaultKubeconfig
 
 	// set default threeport repo path if not provided
 	// this is needed to map the container path to the host path for live
