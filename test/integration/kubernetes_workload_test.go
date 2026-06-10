@@ -350,7 +350,7 @@ func TestWorkloadIntegration(t *testing.T) {
 		// 			Name: util.Ptr("secret-instance"),
 		// 		},
 		// 		SecretDefinitionID:          createdSecretDefinition.ID,
-		// 		WorkloadInstanceID:          createdWorkloadInst.ID,
+		// 		KubernetesWorkloadInstanceID: createdWorkloadInst.ID,
 		// 		KubernetesRuntimeInstanceID: testKubernetesRuntimeInst.ID,
 		// 	},
 		// )
@@ -475,20 +475,23 @@ func TestWorkloadIntegration(t *testing.T) {
 		}
 		assert.Equal(allResourcesFound, true, fmt.Sprintf("should have found all resources in Kubernetes after %d seconds", findAttemptsMax*findCheckDurationSeconds))
 
-		// check threeport API for expected WorkloadEvents
+		// check threeport API for expected Events on this KubernetesWorkloadInstance
 		startedEventFound := false
 		eventAttempts := 0
 		eventAttemptsMax := 300
 		eventCheckDurationSeconds := 1
 		for eventAttempts < eventAttemptsMax {
-			workloadEvents, err := client.GetWorkloadEventsByQueryString(
+			events, err := client.GetEventsJoinAttachedObjectReferenceByQueryString(
 				apiClient,
 				threeportAPIEndpoint,
-				fmt.Sprintf("workloadinstanceid=%d", *createdWorkloadInst.ID),
+				fmt.Sprintf(
+					"objectid=%d&objecttypename=KubernetesWorkloadInstance&objectnamespace=threeport.io&objectversion=v0",
+					*createdWorkloadInst.ID,
+				),
 			)
-			assert.Nil(err, "should have no error returned when trying to retrieve workload events for workload instance")
-			for _, event := range *workloadEvents {
-				if *event.Type == "Normal" && *event.Reason == "Started" {
+			assert.Nil(err, "should have no error returned when trying to retrieve events for kubernetes workload instance")
+			for _, evt := range *events {
+				if *evt.Type == "Normal" && *evt.Reason == "Started" {
 					startedEventFound = true
 					break
 				}
@@ -501,8 +504,8 @@ func TestWorkloadIntegration(t *testing.T) {
 		}
 		assert.Equal(startedEventFound, true, fmt.Sprintf("should have found all container started events in Kubernetes after %d seconds", eventAttemptsMax*eventCheckDurationSeconds))
 
-		// relationship-tag FK transitions on WorkloadInstance.
-		// WorkloadDefinitionID is tagged `relationship:"requires"` and
+		// relationship-tag FK transitions on KubernetesWorkloadInstance.
+		// KubernetesWorkloadDefinitionID is tagged `relationship:"requires"` and
 		// `validate:"required"`. once set at create, the API must reject
 		// any further state change (clear or reassign). a second
 		// workload definition is created here purely as the "other
