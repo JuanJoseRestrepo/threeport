@@ -16,7 +16,7 @@ TPTCTL_VERSION=$(curl -s "https://api.github.com/repos/threeport/threeport/relea
 Otherwise, look up the version at the [releases
 page](https://github.com/threeport/threeport/releases) and set it like so:
 
-<pre><code><span>TPTCTL_VERSION=<span id="tptctl-latest">v0.6.1</span>  # substitute latest version</span></code></pre>
+<pre><code><span>TPTCTL_VERSION=<span id="tptctl-latest">v0.6.1</span></span></code></pre>
 
 <script>
 (function () {
