@@ -15,8 +15,7 @@ operations:
   messages used by the control plane.
 * [mage](https://magefile.org/) for using mage targets.
 
-First, install the `tptctl` CLI so it's available on your `PATH`.  There are
-two ways to do this:
+First, install the `tptctl` CLI.  There are two ways to do this:
 
 * Build it from this branch's source with mage.  This is the recommended way
   for development, since it guarantees `tptctl` matches the code you're
@@ -25,6 +24,17 @@ two ways to do this:
   ```bash
   mage install:tptctl
   ```
+
+  This copies the binary to `$GOBIN`, or `$(go env GOPATH)/bin` if `$GOBIN`
+  is unset.  Make sure that directory is on your `PATH` - if `tptctl version`
+  fails with "command not found" after this step, add it:
+
+  ```bash
+  export PATH="$PATH:$(go env GOPATH)/bin"
+  ```
+
+  Add that line to your shell profile (e.g. `~/.zshrc` or `~/.bashrc`) to
+  persist it across sessions.
 
 * Or install a pre-built release binary by following the [Install tptctl
   guide](../docs/install/install-tptctl.md).  Note this installs the latest
