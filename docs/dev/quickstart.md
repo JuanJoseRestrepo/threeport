@@ -30,7 +30,7 @@ First, install the `tptctl` CLI.  There are two ways to do this:
   fails with "command not found" after this step, add it:
 
   ```bash
-  export PATH="$PATH:$(go env GOPATH)/bin"
+  export PATH="$PATH:${GOBIN:-$(go env GOPATH)/bin}"
   ```
 
   Add that line to your shell profile (e.g. `~/.zshrc` or `~/.bashrc`) to
