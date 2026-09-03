@@ -25,12 +25,13 @@ First, install the `tptctl` CLI.  There are two ways to do this:
   mage install:tptctl
   ```
 
-  This copies the binary to `$GOBIN`, or `$(go env GOPATH)/bin` if `$GOBIN`
-  is unset.  Make sure that directory is on your `PATH` - if `tptctl version`
-  fails with "command not found" after this step, add it:
+  This prints the exact path it installed to, e.g. `tptctl binary installed
+  and available at /home/you/go/bin/tptctl`.  If `tptctl version` fails with
+  "command not found" afterward, that directory isn't on your `PATH` - add it,
+  using the directory from your own command's output (not copied verbatim):
 
   ```bash
-  export PATH="$PATH:${GOBIN:-$(go env GOPATH)/bin}"
+  export PATH="$PATH:/home/you/go/bin"
   ```
 
   Add that line to your shell profile (e.g. `~/.zshrc` or `~/.bashrc`) to
