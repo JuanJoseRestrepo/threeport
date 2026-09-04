@@ -15,32 +15,27 @@ operations:
   messages used by the control plane.
 * [mage](https://magefile.org/) for using mage targets.
 
-First, install the `tptctl` CLI.  There are two ways to do this:
+Note: run every command in this guide, including all mage targets, from the
+root of this repo.
 
-* Build it from this branch's source with mage.  This is the recommended way
-  for development, since it guarantees `tptctl` matches the code you're
-  working on:
+First, install the `tptctl` CLI by building it from this branch's source with
+mage.  This ensures `tptctl` matches the code you're working on:
 
-  ```bash
-  mage install:tptctl
-  ```
+```bash
+mage install:tptctl
+```
 
-  This prints the exact path it installed to, e.g. `tptctl binary installed
-  and available at /home/you/go/bin/tptctl`.  If `tptctl version` fails with
-  "command not found" afterward, that directory isn't on your `PATH` - add it,
-  using the directory from your own command's output (not copied verbatim):
+This prints the exact path it installed to, e.g. `tptctl binary installed
+and available at /home/you/go/bin/tptctl`.  If `tptctl version` fails with
+"command not found" afterward, that directory isn't on your `PATH` - add it,
+using the directory from your own command's output (not copied verbatim):
 
-  ```bash
-  export PATH="$PATH:/home/you/go/bin"
-  ```
+```bash
+export PATH="$PATH:/home/you/go/bin"
+```
 
-  Add that line to your shell profile (e.g. `~/.zshrc` or `~/.bashrc`) to
-  persist it across sessions.
-
-* Or install a pre-built release binary by following the [Install tptctl
-  guide](../docs/install/install-tptctl.md).  Note this installs the latest
-  *released* version, which may not match the in-development code on this
-  branch.
+Add that line to your shell profile (e.g. `~/.zshrc` or `~/.bashrc`) to
+persist it across sessions.
 
 Create a local container registry.  This mage target runs a local docker
 container to serve as the container registry, so we don't have to wait for
@@ -57,29 +52,16 @@ mage build:allImagesDev
 ```
 
 Install Threeport from the newly built images.  `--name` is an arbitrary name
-you choose for this control plane instance:
+you choose for this control plane instance.  `--control-plane-image-tag` must
+match the tag `mage build:allImagesDev` just pushed to the registry - that tag
+comes from `internal/version/version.txt` (the same file
+`mage build:allImagesDev` reads via `version.GetVersion()`), so rather than
+hardcoding a version that will go stale as this branch is synced with new
+releases, read it from that file.  `--control-plane-image-namespace` is always
+`localhost:5001` for this local-registry workflow:
 
 ```bash
-tptctl up \
-  --name dev-0 \
-  --provider kind \
-  --auth-enabled=false \
-  --local-registry \
-  --control-plane-image-namespace localhost:5001 \
-  --control-plane-image-tag v0.7.0-dev
-```
-
-The `--control-plane-image-tag` must match the tag `mage build:allImagesDev`
-just pushed to the registry.  That tag comes from `internal/version/version.txt`
-(the same file `mage build:allImagesDev` reads via `version.GetVersion()`), so
-rather than hardcoding a version that will go stale as this branch is synced
-with new releases, read it from that file.  `--control-plane-image-namespace`
-is always `localhost:5001` for this local-registry workflow.  Here's the same
-command with everything captured as variables, so it stays reusable and never
-goes stale:
-
-```bash
-CONTROL_PLANE_NAME=<name>
+CONTROL_PLANE_NAME=dev-0  # an arbitrary name for the Threeport installation
 CONTROL_PLANE_IMAGE_NAMESPACE=localhost:5001
 CONTROL_PLANE_IMAGE_TAG=$(cat internal/version/version.txt)
 
@@ -103,12 +85,6 @@ curl localhost/swagger/index.html
 ```
 
 Uninstall the local dev control plane:
-
-```bash
-tptctl down --name dev-0
-```
-
-Or, if you used the variable form above:
 
 ```bash
 tptctl down --name "$CONTROL_PLANE_NAME"
