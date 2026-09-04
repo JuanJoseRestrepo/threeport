@@ -18,8 +18,11 @@ operations:
 Note: run every command in this guide, including all mage targets, from the
 root of this repo.
 
-First, install the `tptctl` CLI by building it from this branch's source with
-mage.  This ensures `tptctl` matches the code you're working on:
+First, check out the branch you'll be working from - generally the latest
+release branch (currently `0.7`), or a feature branch checked out from it if
+you're working on a contribution.  Then install the `tptctl` CLI by building
+it from that branch's source with mage.  This ensures `tptctl` matches the
+code you're working on:
 
 ```bash
 mage install:tptctl
