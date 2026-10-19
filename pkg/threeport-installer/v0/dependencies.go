@@ -257,7 +257,19 @@ store_dir: /data
 								"name":            "nats-box",
 								"image":           "docker.io/natsio/nats-box:0.16.0-nonroot",
 								"imagePullPolicy": "IfNotPresent",
-								"resources":       nil,
+								// This container only sleeps, waiting for an operator
+								// to exec into it, so it is sized at the floor rather
+								// than measured against any load.
+								"resources": map[string]interface{}{
+									"requests": map[string]interface{}{
+										"cpu":    "5m",
+										"memory": "16Mi",
+									},
+									"limits": map[string]interface{}{
+										"cpu":    "50m",
+										"memory": "32Mi",
+									},
+								},
 								"env": []interface{}{
 									map[string]interface{}{
 										"name":  "NATS_URL",
@@ -356,7 +368,21 @@ store_dir: /data
 								"name":            "nats",
 								"image":           "docker.io/library/nats:2.10.25-alpine",
 								"imagePullPolicy": "IfNotPresent",
-								"resources":       map[string]interface{}{},
+								// Conservative, not measured: this is the one container
+								// here that does real work, serving every controller's
+								// reconcile stream and the distributed lock. 30Mi of
+								// that is jetstream's own max_mem in nats.conf, so the
+								// limit leaves headroom above it rather than racing it.
+								"resources": map[string]interface{}{
+									"requests": map[string]interface{}{
+										"cpu":    "100m",
+										"memory": "128Mi",
+									},
+									"limits": map[string]interface{}{
+										"cpu":    "500m",
+										"memory": "256Mi",
+									},
+								},
 								"ports": []interface{}{
 									map[string]interface{}{
 										"containerPort": 4222,
@@ -420,17 +446,21 @@ store_dir: /data
 								// Healthcheck Probes  #
 								//                     #
 								//######################
-								//"livenessProbe": map[string]interface{}{
-								//	"failureThreshold": 3,
-								//	"httpGet": map[string]interface{}{
-								//		"path": "/",
-								//		"port": 8222,
-								//	},
-								//	"initialDelaySeconds": 10,
-								//	"periodSeconds":       30,
-								//	"successThreshold":    1,
-								//	"timeoutSeconds":      5,
-								//},
+								// A hung-but-not-crashed NATS process used to be marked
+								// NotReady forever by the probe below, with nothing to
+								// restart it: readinessProbe only ever pulls a pod from
+								// Service endpoints, it never triggers a kubelet restart.
+								"livenessProbe": map[string]interface{}{
+									"failureThreshold": 3,
+									"httpGet": map[string]interface{}{
+										"path": "/",
+										"port": 8222,
+									},
+									"initialDelaySeconds": 10,
+									"periodSeconds":       30,
+									"successThreshold":    1,
+									"timeoutSeconds":      5,
+								},
 								"readinessProbe": map[string]interface{}{
 									"failureThreshold": 3,
 									"httpGet": map[string]interface{}{
@@ -481,7 +511,17 @@ store_dir: /data
 								"name":            "reloader",
 								"image":           "docker.io/natsio/nats-server-config-reloader:0.16.1",
 								"imagePullPolicy": "IfNotPresent",
-								"resources":       nil,
+								// Watches one file and sends a signal on change.
+								"resources": map[string]interface{}{
+									"requests": map[string]interface{}{
+										"cpu":    "5m",
+										"memory": "16Mi",
+									},
+									"limits": map[string]interface{}{
+										"cpu":    "50m",
+										"memory": "64Mi",
+									},
+								},
 								"command": []interface{}{
 									"nats-server-config-reloader",
 									"-pid",
@@ -513,7 +553,19 @@ store_dir: /data
 								"name":            "metrics",
 								"image":           "docker.io/natsio/prometheus-nats-exporter:0.16.0",
 								"imagePullPolicy": "IfNotPresent",
-								"resources":       map[string]interface{}{},
+								// Scrapes the local monitoring endpoints on request; the
+								// limit allows for a burst on a slow scrape rather than
+								// the steady state, which is close to idle.
+								"resources": map[string]interface{}{
+									"requests": map[string]interface{}{
+										"cpu":    "10m",
+										"memory": "32Mi",
+									},
+									"limits": map[string]interface{}{
+										"cpu":    "100m",
+										"memory": "64Mi",
+									},
+								},
 								"args": []interface{}{
 									"-connz",
 									"-routez",
